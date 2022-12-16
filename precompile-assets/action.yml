@@ -1,0 +1,17 @@
+name: "Precompile Assets"
+runs:
+  using: "composite"
+  steps:
+    - name: Restore precompiled assets cache, if exists
+      uses: actions/cache@v3
+      id: assets-cache
+      with:
+        path: |
+          **/public/assets
+          **/public/vite-test
+        key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}
+
+    - name: Compile assets
+      if: ${{ steps.assets-cache.outputs.cache-hit != 'true' }}
+      run: NODE_ENV=development bundle exec rake assets:precompile
+      shell: bash
