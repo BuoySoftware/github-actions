@@ -1,0 +1,42 @@
+name: Slack Notification
+
+on:
+  workflow_call:
+    inputs:
+      SLACK_NOTIFY_OVERRIDE:
+        description: "Send the notification regardless of success or failure"
+        default: false
+        required: false
+        type: boolean
+
+jobs:
+  slack_notification:
+    name: Slack Notification
+    runs-on: large
+    steps:
+      - uses: technote-space/workflow-conclusion-action@v3
+
+      - name: Determine Status
+        uses: haya14busa/action-cond@v1
+        id: status
+        with:
+          cond: ${{ env.WORKFLOW_CONCLUSION == 'success' }}
+          if_true: "success"
+          if_false: "failure"
+
+      - name: Determine Fields
+        uses: haya14busa/action-cond@v1
+        id: fields
+        with:
+          cond: ${{ github.event_name != 'pull_request' }}
+          if_true: "repo,commit,eventName,workflow"
+          if_false: "repo,commit,eventName,workflow,pullRequest"
+
+      - name: Slack Notification
+        if: ${{ inputs.SLACK_NOTIFY_OVERRIDE == true || steps.status.outputs.value == 'failure' }}
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ steps.status.outputs.value }}
+          fields: ${{ steps.fields.outputs.value }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
