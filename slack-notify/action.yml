@@ -1,12 +1,12 @@
 name: Slack Notification
 
 inputs:
-  slack-notify-override:
+  send_all_notifications:
     description: "Send the notification regardless of success or failure"
     default: false
     required: false
     type: boolean
-  slack-webhook-url:
+  webhook_url:
     description: "Slack webhook url to send the notification to"
     required: true
 
@@ -32,10 +32,10 @@ runs:
         if_false: "repo,commit,eventName,workflow,pullRequest"
 
     - name: Slack Notification
-      if: ${{ inputs.slack-notify-override == true || steps.status.outputs.value == 'failure' }}
+      if: ${{ inputs.send_all_notifications == true || steps.status.outputs.value == 'failure' }}
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ steps.status.outputs.value }}
         fields: ${{ steps.fields.outputs.value }}
       env:
-        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook-url }}
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook_url }}
