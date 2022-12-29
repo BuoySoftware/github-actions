@@ -32,7 +32,7 @@ runs:
         if_false: "repo,commit,eventName,workflow,pullRequest"
 
     - name: Slack Notification
-      if: ${{ inputs.send_all_notifications == true || steps.status.outputs.value == 'failure' }}
+      if: ${{ inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure' }}
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ steps.status.outputs.value }}
