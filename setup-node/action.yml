@@ -10,8 +10,10 @@ runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v3
+      id: setup-node
       with:
         node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.install-dependencies == 'true' && 'yarn' }}
 
     - name: Get yarn cache directory path
       if: ${{ inputs.install-dependencies == 'true' }}
@@ -19,19 +21,7 @@ runs:
       run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
       shell: bash
 
-    - name: Restore yarn cache, if exists
-      uses: actions/cache@v3
-      if: ${{ inputs.install-dependencies == 'true' }}
-      id: yarn-cache
-      with:
-        path: |
-          **/node_modules
-          ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-${{ hashFiles('**/yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-
-
     - name: Install yarn dependencies
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
-      run: yarn --prefer-offline --frozen-lockfile
+      if: ${{ inputs.install-dependencies == 'true' }}
+      run: yarn --prefer-offline --frozen-lockfile --immutable
       shell: bash
