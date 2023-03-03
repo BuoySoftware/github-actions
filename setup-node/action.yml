@@ -32,6 +32,6 @@ runs:
           ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-
 
     - name: Install yarn dependencies
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' }}
       run: yarn --prefer-offline --frozen-lockfile
       shell: bash
