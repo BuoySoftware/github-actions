@@ -28,8 +28,8 @@ runs:
       id: fields
       with:
         cond: ${{ github.event_name != 'pull_request' }}
-        if_true: "repo,commit,eventName,workflow"
-        if_false: "repo,commit,eventName,workflow,pullRequest"
+        if_true: "repo,commit,eventName,workflow,ref"
+        if_false: "repo,commit,eventName,workflow,pullRequest,ref"
 
     - name: Slack Notification
       if: ${{ inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure' }}

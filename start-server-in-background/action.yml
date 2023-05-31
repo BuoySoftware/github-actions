@@ -1,0 +1,29 @@
+name: Start rails server in background
+
+inputs:
+  port:
+    description: Port to run the server on (ex 5000)
+    required: true
+    type: number
+  time_to_wait_for_server:
+    default: 5
+    description: Desired sleep time to wait for server to boot
+    required: false
+    type: number
+  working_directory:
+    default: "."
+    description: Desired working directory
+    required: false
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Start server in background
+      run: |
+        bundle exec puma -p ${{ inputs.port }} -C ./config/puma.rb & \
+        sleep ${{ inputs.time_to_wait_for_server }} && \
+        curl http://localhost:${{ inputs.port }} -I &
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
