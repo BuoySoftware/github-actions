@@ -46,6 +46,11 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
+    - name: Set up environment variables for repo
+      run: cp .env.sample .env
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+
     - name: Install Ruby for repo
       uses: ruby/setup-ruby@v1
       with:
@@ -66,11 +71,6 @@ runs:
 
     - name: bundle check for repo
       run: bundle check
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-
-    - name: Set up environment variables for repo
-      run: cp .env.sample .env
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
