@@ -11,9 +11,8 @@ inputs:
     required: false
     type: string
   node_version_file:
-    default: ""
     description: File that specifies node version
-    required: false
+    required: true
     type: string
   personal_access_token:
     description: Personal access token generated for the repository
