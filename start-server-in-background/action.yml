@@ -22,7 +22,7 @@ runs:
   steps:
     - name: Start server in background
       run: |
-        bundle exec puma -p ${{ inputs.port }} -C ./config/puma.rb & \
+        bin/server & \
         sleep ${{ inputs.time_to_wait_for_server }} && \
         curl http://localhost:${{ inputs.port }} -I &
       shell: bash
