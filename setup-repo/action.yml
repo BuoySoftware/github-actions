@@ -10,6 +10,10 @@ inputs:
     description: Run additional rake tasks when creating database, separate with spaces
     required: false
     type: string
+  node_version_file:
+    description: File that specifies node version
+    required: true
+    type: string
   personal_access_token:
     description: Personal access token generated for the repository
     required: true
@@ -62,7 +66,7 @@ runs:
       with:
         cache: yarn
         cache-dependency-path: ${{ inputs.working_directory }}
-        node-version-file: ${{ inputs.working_directory }}/.tool-versions
+        node-version-file: ${{ inputs.working_directory }}/${{ inputs.node_version_file }}
 
     - name: Install yarn dependencies
       run: yarn --prefer-offline --frozen-lockfile
