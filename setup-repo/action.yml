@@ -64,8 +64,6 @@ runs:
     - name: Install Node for repo
       uses: actions/setup-node@v3
       with:
-        cache: yarn
-        cache-dependency-path: ${{ inputs.working_directory }}
         node-version-file: ${{ inputs.working_directory }}/${{ inputs.node_version_file }}
 
     - name: Install yarn dependencies
