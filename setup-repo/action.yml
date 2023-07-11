@@ -54,6 +54,14 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
+    - name: Install Java
+      if: endsWith(inputs.repo, 'BuoyRails')
+      uses: actions/setup-java@v3
+      with:
+        distribution: zulu
+        java-version: 11
+        architecture: x64
+
     - name: Set up environment variables for repo
       run: cp .env.sample .env
       shell: bash
