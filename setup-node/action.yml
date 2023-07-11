@@ -3,6 +3,9 @@ inputs:
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: true
+  npm_access_token:
+    description: "Access token for downloading private npm packages from @buoysoftware"
+    required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
     default: true
@@ -30,6 +33,11 @@ runs:
         key: ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-${{ hashFiles('**/yarn.lock') }}
         restore-keys: |
           ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-
+
+    - name: Authenticate with private NPM package
+      if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
+      run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
+      shell: bash
 
     - name: Install yarn dependencies
       if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
