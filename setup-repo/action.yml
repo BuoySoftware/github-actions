@@ -55,7 +55,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Install Java
-      if: contains(inputs.repo, "BuoyRails")
+      if: endsWith(inputs.repo, 'BuoyRails')
       uses: actions/setup-java@v3
       with:
         distribution: zulu
