@@ -55,6 +55,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Install Vips
+      if: endsWith(inputs.repo, 'BuoyRails')
       run: sudo apt-get update && sudo apt-get install -y libvips
       shell: bash
 
