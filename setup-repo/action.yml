@@ -54,6 +54,11 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
+    - name: Install Vips
+      if: endsWith(inputs.repo, 'BuoyRails')
+      run: sudo apt-get update && sudo apt-get install -y libvips
+      shell: bash
+
     - name: Install Java
       if: endsWith(inputs.repo, 'BuoyRails')
       uses: actions/setup-java@v3
