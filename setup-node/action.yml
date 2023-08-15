@@ -9,6 +9,12 @@ inputs:
   install-dependencies:
     description: "Whether or not to install dependencies"
     default: true
+    required: false
+  working-directory:
+    description: "Working directory to restore/install"
+    default: ""
+    required: false
+
 runs:
   using: "composite"
   steps:
@@ -21,6 +27,7 @@ runs:
       id: yarn-cache-dir-path
       run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
 
     - name: Restore yarn cache, if exists
       uses: actions/cache@v3
@@ -28,18 +35,20 @@ runs:
       id: yarn-cache
       with:
         path: |
-          **/node_modules
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-${{ hashFiles('**/yarn.lock') }}
+        key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-yarn-
+          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
       run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies
       if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
       run: yarn --prefer-offline --frozen-lockfile
       shell: bash
+      working-directory: ${{ inputs.working-directory }}

@@ -1,4 +1,11 @@
 name: "Precompile Assets"
+
+inputs:
+  working-directory:
+    description: "Working directory to restore/install"
+    default: ""
+    required: false
+
 runs:
   using: "composite"
   steps:
@@ -7,11 +14,12 @@ runs:
       id: assets-cache
       with:
         path: |
-          **/public/assets
-          **/public/vite-test
-        key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/assets
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/vite-test
+        key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}-dir-${{ inputs.working-directory }}
 
     - name: Compile assets
       if: ${{ steps.assets-cache.outputs.cache-hit != 'true' }}
       run: NODE_ENV=development bundle exec rake assets:precompile
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
