@@ -78,7 +78,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Install Node
-      uses: BuoySoftware/github-actions/setup-node@vo/node-wd
+      uses: BuoySoftware/github-actions/setup-node@main
       with:
         node-version: ${{ steps.repo_node_vers.outputs.v }}
         npm_access_token: ${{ inputs.npm_access_token }}
@@ -90,7 +90,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Precompile test assets
-      uses: BuoySoftware/github-actions/precompile-assets@vo/node-wd
+      uses: BuoySoftware/github-actions/precompile-assets@main
       with:
         working-directory: ${{ inputs.working_directory }}
 
