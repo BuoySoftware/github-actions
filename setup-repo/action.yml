@@ -11,8 +11,9 @@ inputs:
     required: false
     type: string
   node_version_file:
-    description: File that specifies node version
-    required: true
+    default: ".tool-versions"
+    description: Node version file (.tool-versions, .nvmrc)
+    required: false
     type: string
   npm_access_token:
     description: Access token for downloading private npm packages from @buoysoftware
@@ -59,14 +60,6 @@ runs:
       run: sudo apt-get update && sudo apt-get install -y libvips
       shell: bash
 
-    - name: Install Java
-      if: endsWith(inputs.repo, 'BuoyRails')
-      uses: actions/setup-java@v3
-      with:
-        distribution: zulu
-        java-version: 11
-        architecture: x64
-
     - name: Set up environment variables for repo
       run: cp .env.sample .env
       shell: bash
@@ -78,39 +71,32 @@ runs:
         bundler-cache: true
         working-directory: ${{ inputs.working_directory }}
 
-    - name: Install Node for repo
-      uses: actions/setup-node@v3
-      with:
-        node-version-file: ${{ inputs.working_directory }}/${{ inputs.node_version_file }}
-
-    - name: Authenticate with private NPM package
-      if: ${{ inputs.npm_access_token }}
-      run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
-      shell: bash
-
-    - name: Install yarn dependencies
-      run: yarn --prefer-offline --frozen-lockfile
+    - name: Get node version
+      id: repo_node_vers
+      run: echo "v=$(grep 'nodejs' ${{ inputs.node_version_file }} | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       shell: bash
       working-directory: ${{ inputs.working_directory }}
+
+    - name: Install Node
+      uses: BuoySoftware/github-actions/setup-node@main
+      with:
+        node-version: ${{ steps.repo_node_vers.outputs.v }}
+        npm_access_token: ${{ inputs.npm_access_token }}
+        working-directory: ${{ inputs.working_directory }}
 
     - name: bundle check for repo
       run: bundle check
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
-    - name: Compile assets for repo
-      run: NODE_ENV=development bundle exec rake assets:precompile
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
+    - name: Precompile test assets
+      uses: BuoySoftware/github-actions/precompile-assets@main
+      with:
+        working-directory: ${{ inputs.working_directory }}
 
     - name: Create, load and seed repo database
       env:
         DB_TEST_DATABASE: ${{ inputs.database_name }}
       run: bundle exec rake db:drop db:create db:schema:load ${{ inputs.extra_rake_tasks }}
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-
-    - name: Enable caching
-      run: touch tmp/caching-dev.txt
       shell: bash
       working-directory: ${{ inputs.working_directory }}
