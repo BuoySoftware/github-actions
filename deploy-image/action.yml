@@ -1,0 +1,65 @@
+name: Deploy image
+
+inputs:
+  application:
+    description: Name of the application to be deployed. Value is expected to be the application directory containing the Kubernetes manifests to be updated.
+    required: true
+    type: string
+  environment:
+    description: Environment to deploy the image in
+    required: true
+    type: string
+  image_url:
+    description: URL of the image to be deployed
+    required: true
+    type: string
+  image_tag:
+    description: Tag of the image to be deployed
+    required: true
+    type: string
+  manifests_repository:
+    default: BuoySoftware/ArgoCD
+    description: Repository of the Kubernetes manifests to be updated
+    required: false
+    type: string
+  personal_access_token:
+    description: Personal access token generated for the manifests repository
+    required: true
+    type: string
+  working_directory:
+    default: "."
+    description: Desired working directory for the manifests repository
+    required: false
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Checkout Manifests Repo
+      uses: actions/checkout@v3
+      with:
+        path: ${{ inputs.working_directory }}
+        repository: ${{ inputs.manifests_repository }}
+        token: ${{ inputs.personal_access_token }}
+
+    - name: Set up Kustomize
+      uses: imranismail/setup-kustomize@v2
+
+    - name: "Update Deployment Image Tag"
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        cd ${{ inputs.application }}/overlays/${{ inputs.environment }}
+        kustomize edit set image ${{ inputs.image_url }}:${{ inputs.image_tag }}
+        kustomize build .
+
+    - name: "Push Updated Image Tag"
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        git config --global user.name "buoysoftware-bot"
+        git config --global user.email "buoysoftware-bot@users.noreply.github.com"
+        git commit -am "Update deployment image tag for ${{ inputs.application }}-${{ inputs.environment }} to ${{ inputs.image_tag }} [skip ci]"
+        git pull --rebase --autostash
+        git push
