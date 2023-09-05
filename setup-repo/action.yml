@@ -51,7 +51,7 @@ runs:
 
     - name: Checkout repo short git sha (if present)
       if: ${{ inputs.short_git_sha != '' }}
-      run: git fetch && git checkout ${{ inputs.short_git_sha }}
+      run: git fetch --tags && git checkout ${{ inputs.short_git_sha }}
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
