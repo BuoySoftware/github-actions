@@ -3,8 +3,8 @@ inputs:
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: true
-  npm_access_token:
-    description: "Access token for downloading private npm packages from @buoysoftware"
+  github_npm_access_token:
+    description: "Access token for downloading private npm packages from Github Packages"
     required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
@@ -41,9 +41,9 @@ runs:
         restore-keys: |
           ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
-    - name: Authenticate with private NPM package
-      if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
-      run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
+    - name: Authenticate with Github Packages
+      if: ${{ inputs.install-dependencies == 'true' }}
+      run: echo "//npm.pkg.github.com/:_authToken=${{ inputs.github_npm_access_token }}" > ~/.npmrc && echo "@buoysoftware:registry=https://npm.pkg.github.com/" >> .npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
