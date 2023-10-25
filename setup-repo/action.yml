@@ -15,8 +15,8 @@ inputs:
     description: Node version file (.tool-versions, .nvmrc)
     required: false
     type: string
-  github_npm_access_token:
-    description: Access token for downloading private npm packages from Github Packages
+  npm_access_token:
+    description: Access token for downloading private npm packages from @buoysoftware
     required: false
     type: string
   personal_access_token:
@@ -81,7 +81,7 @@ runs:
       uses: BuoySoftware/github-actions/setup-node@main
       with:
         node-version: ${{ steps.repo_node_vers.outputs.v }}
-        github_npm_access_token: ${{ inputs.github_npm_access_token }}
+        npm_access_token: ${{ inputs.npm_access_token }}
         working-directory: ${{ inputs.working_directory }}
 
     - name: bundle check for repo
