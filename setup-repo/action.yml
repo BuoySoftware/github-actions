@@ -43,17 +43,13 @@ runs:
 
   steps:
     - name: Checkout Repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
+        fetch-tags: true
         path: ${{ inputs.working_directory }}
+        ref: ${{ inputs.short_git_sha }}
         repository: ${{ inputs.repo }}
         token: ${{ inputs.personal_access_token }}
-
-    - name: Checkout repo short git sha (if present)
-      if: ${{ inputs.short_git_sha != '' }}
-      run: git fetch --tags && git checkout ${{ inputs.short_git_sha }}
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
 
     - name: Install Vips
       if: endsWith(inputs.repo, 'BuoyRails')
