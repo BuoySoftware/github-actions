@@ -47,7 +47,7 @@ runs:
       with:
         fetch-tags: true
         path: ${{ inputs.working_directory }}
-        ref: ${{ inputs.short_git_sha }}
+        ref: ${{ inputs.short_git_sha || '' }}
         repository: ${{ inputs.repo }}
         token: ${{ inputs.personal_access_token }}
 
