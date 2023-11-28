@@ -15,11 +15,10 @@ runs:
       with:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/assets
-          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/vite-test
         key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}-dir-${{ inputs.working-directory }}
 
     - name: Compile assets
       if: ${{ steps.assets-cache.outputs.cache-hit != 'true' }}
-      run: NODE_ENV=development bundle exec rake assets:precompile
+      run: NODE_ENV=development bundle exec rails assets:precompile
       shell: bash
       working-directory: ${{ inputs.working-directory }}
