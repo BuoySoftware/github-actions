@@ -16,6 +16,7 @@ runs:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/assets
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/vite-test
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/app/assets/builds
         key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}-dir-${{ inputs.working-directory }}
 
     - name: Compile assets
