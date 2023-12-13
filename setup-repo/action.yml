@@ -103,3 +103,4 @@ runs:
           mkdir -p tmp/pids
         fi
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
