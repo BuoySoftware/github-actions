@@ -96,3 +96,11 @@ runs:
       run: bundle exec rake db:drop db:create db:schema:load ${{ inputs.extra_rake_tasks }}
       shell: bash
       working-directory: ${{ inputs.working_directory }}
+
+    - name: Add tmp/pids folder
+      run: |
+        if [ ! -d tmp/pids ]; then
+          mkdir -p tmp/pids
+        fi
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
