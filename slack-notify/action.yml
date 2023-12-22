@@ -1,6 +1,10 @@
 name: Slack Notification
 
 inputs:
+  custom_payload:
+    default: null
+    description: "Custom payload to send to Slack"
+    required: false
   send_all_notifications:
     description: "Send the notification regardless of success or failure"
     default: false
@@ -31,11 +35,22 @@ runs:
         if_true: "repo,commit,eventName,workflow,ref"
         if_false: "repo,commit,eventName,workflow,pullRequest,ref"
 
-    - name: Slack Notification
-      if: ${{ inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure' }}
+    - name: Generic Slack Notification
+      if: ${{ (inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure') && custom_payload == null }}
       uses: 8398a7/action-slack@v3
       with:
-        status: ${{ steps.status.outputs.value }}
         fields: ${{ steps.fields.outputs.value }}
+        status: ${{ steps.status.outputs.value }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook_url }}
+
+    - name: Custom Slack Notification
+      if: ${{ (inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure') && custom_payload != null  }}
+      uses: 8398a7/action-slack@v3
+      with:
+        custom_payload: |
+          ${{ inputs.custom_payload }}
+        fields: ${{ steps.fields.outputs.value }}
+        status: ${{ steps.status.outputs.value }}
       env:
         SLACK_WEBHOOK_URL: ${{ inputs.webhook_url }}
