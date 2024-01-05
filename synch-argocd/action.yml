@@ -1,0 +1,29 @@
+name: Synch ArgoCD
+
+inputs:
+  application:
+    description: Name of the application to be synchronized.
+    required: true
+    type: string
+  environment:
+    description: Environment to be synchronized.
+    required: true
+    type: string
+  client:
+    description: Client to be synchronized.
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - uses: clowdhaus/argo-cd-action/@main
+      with:
+        command: app get ${{ inputs.client }}-${{ inputs.environment }}-${{ inputs.application }}
+        options: --refresh --auth-token=${{ secrets.ARGOCD_AUTH_TOKEN }} --server ${{ secrets.ARGOCD_SERVER }}
+
+    - uses: clowdhaus/argo-cd-action/@main
+      with:
+        command: app sync ${{ inputs.client }}-${{ inputs.environment }}-${{ inputs.application }}
+        options: --async --resource apps:Deployment:* --auth-token=${{ secrets.ARGOCD_AUTH_TOKEN }} --server ${{ secrets.ARGOCD_SERVER }}
