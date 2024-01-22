@@ -3,6 +3,10 @@ inputs:
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: true
+  cache-key:
+    description: "Cache key for restoring dependencies"
+    required: false
+    default: ""
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -37,9 +41,9 @@ runs:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+        key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-${inputs.cache-key}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
+          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-${inputs.cache-key}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
