@@ -6,6 +6,9 @@ inputs:
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
+  github_packages_token:
+    description: "Access token for downloading private npm packages from @buoysoftware"
+    required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
     default: true
@@ -48,8 +51,8 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Authenticate with Github Packages
-      if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token == '' }}
-      run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.GH_PACKAGES_TOKEN }}" > ~/.npmrc && echo "@buoysoftware:registry=https://npm.pkg.github.com/" >> .npmrc
+      if: ${{ inputs.install-dependencies == 'true' && inputs.github_packages_token }}
+      run: echo "//npm.pkg.github.com/:_authToken=${{ inputs.github_packages_token }}" > ~/.npmrc && echo "@buoysoftware:registry=https://npm.pkg.github.com/" >> .npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
