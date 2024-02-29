@@ -6,6 +6,9 @@ inputs:
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
+  github_npm_access_token:
+    description: "Access token for downloading private npm packages from @buoysoftware via Github Packages"
+    required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
     default: true
