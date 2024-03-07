@@ -1,0 +1,30 @@
+name: Sync ArgoCD deployment manifests
+
+inputs:
+  target_app:
+    description: "Application to sync the deployment manifests for"
+    required: true
+    type: string
+  argocd_auth_token:
+    description: "Auth token for the ArgoCD API"
+    required: true
+    type: string
+  argocd_server:
+    description: "URL for the ArgoCD API"
+    required: true
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Refresh ArgoCD Application manifests
+      uses: clowdhaus/argo-cd-action/@main
+      with:
+        command: app get ${{ inputs.target_app }}
+        options: --refresh --auth-token=${{ inputs.argocd_auth_token }} --server ${{ inputs.argocd_server }}
+
+    - name: Sync deployments
+      uses: clowdhaus/argo-cd-action/@main
+      with:
+        command: app sync ${{ inputs.TARGET_APP }}
+        options: --async --resource apps:Deployment:* --auth-token=${{ inputs.argocd_auth_token }} --server ${{ inputs.argocd_server }}
