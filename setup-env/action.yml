@@ -30,7 +30,7 @@ runs:
         ARRAY=(${{ inputs.replace_vars_with_lvh_host }})
         for i in "${ARRAY[@]}"
         do
-          sed -r -i -E 's/($i=.*)localhost/\1lvh.me/' placeholder.txt
+          sed -r -i -E "s/($i=.*)localhost/\1lvh.me/" placeholder.txt
         done
 
         # Copy placeholder.txt into .env.sample and create a new .env file
