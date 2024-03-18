@@ -1,11 +1,6 @@
 name: Set env file
 
 inputs:
-  env_file_name:
-    default: ".env"
-    description: Environment variables to set
-    required: false
-    type: string
   env_vars:
     default: ""
     description: Environment variables to set

@@ -1,11 +1,6 @@
 name: Setup repo
 
 inputs:
-  env_file_name:
-    default: ".env"
-    description: Environment variables to set
-    required: false
-    type: string
   env_vars:
     default: ""
     description: Environment variables to set
@@ -70,7 +65,6 @@ runs:
     - name: Set up environment variables for repo
       uses: BuoySoftware/github-actions/setup-env@vo/start-server
       with:
-        env_file_name: ${{ inputs.env_file_name }}
         env_vars: ${{ inputs.env_vars }}
         replace_vars_with_lvh_host: ${{ inputs.replace_vars_with_lvh_host }}
         working_directory: ${{ inputs.working_directory }}
