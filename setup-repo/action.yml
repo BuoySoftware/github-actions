@@ -63,7 +63,7 @@ runs:
       shell: bash
 
     - name: Set up environment variables for repo
-      uses: BuoySoftware/github-actions/setup-env@vo/start-server
+      uses: BuoySoftware/github-actions/setup-env@main
       with:
         env_vars: ${{ inputs.env_vars }}
         replace_vars_with_lvh_host: ${{ inputs.replace_vars_with_lvh_host }}
