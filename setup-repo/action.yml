@@ -1,9 +1,10 @@
 name: Setup repo
 
 inputs:
-  database_name:
-    description: Database name to create
-    required: true
+  env_vars:
+    default: ""
+    description: Environment variables to set
+    required: false
     type: string
   extra_rake_tasks:
     default: ""
@@ -23,14 +24,19 @@ inputs:
     description: Personal access token generated for the repository
     required: true
     type: string
+  ref:
+    default: ""
+    description: The branch, tag or SHA to checkout, ie `v1.2.0`
+    required: false
+    type: string
+  replace_vars_with_lvh_host:
+    default: ""
+    description: Space delimited list of environment variables to replace localhost with lvh.me
+    required: false
+    type: string
   repo:
     description: Full repository name (Org/Repo)
     required: true
-    type: string
-  short_git_sha:
-    default: ""
-    description: Short git sha, leave empty for current branch
-    required: false
     type: string
   working_directory:
     default: "."
@@ -57,9 +63,11 @@ runs:
       shell: bash
 
     - name: Set up environment variables for repo
-      run: cp .env.sample .env
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
+      uses: BuoySoftware/github-actions/setup-env@main
+      with:
+        env_vars: ${{ inputs.env_vars }}
+        replace_vars_with_lvh_host: ${{ inputs.replace_vars_with_lvh_host }}
+        working_directory: ${{ inputs.working_directory }}
 
     - name: Install Ruby for repo
       uses: ruby/setup-ruby@v1
@@ -91,8 +99,6 @@ runs:
         working-directory: ${{ inputs.working_directory }}
 
     - name: Create, load and seed repo database
-      env:
-        DB_TEST_DATABASE: ${{ inputs.database_name }}
       run: bundle exec rake db:drop db:create db:schema:load ${{ inputs.extra_rake_tasks }}
       shell: bash
       working-directory: ${{ inputs.working_directory }}
