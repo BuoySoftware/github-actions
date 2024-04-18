@@ -1,5 +1,9 @@
 name: "Setup Node"
 inputs:
+  force_install_dependencies:
+    description: "Whether or not to force install dependencies"
+    default: false
+    required: false
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: true
@@ -57,7 +61,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
+      if: ${{ (inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true') || inputs.force_install_dependencies == 'true'}}
       run: yarn --prefer-offline --frozen-lockfile
       shell: bash
       working-directory: ${{ inputs.working-directory }}
