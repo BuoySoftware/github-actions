@@ -57,6 +57,12 @@ runs:
         repository: ${{ inputs.repo }}
         token: ${{ inputs.personal_access_token }}
 
+    - name: Gather github sha
+      run: |
+        echo "repo_sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+
     - name: Install Vips
       if: endsWith(inputs.repo, 'BuoyRails')
       run: sudo apt-get update && sudo apt-get install -y libvips
@@ -96,6 +102,7 @@ runs:
     - name: Precompile test assets
       uses: BuoySoftware/github-actions/precompile-assets@main
       with:
+        github_sha: ${{ env.repo_sha }}
         working-directory: ${{ inputs.working_directory }}
 
     - name: Create, load and seed repo database

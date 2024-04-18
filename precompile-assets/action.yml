@@ -1,6 +1,11 @@
 name: "Precompile Assets"
 
 inputs:
+  github_sha:
+    default: ""
+    description: "Github sha to store in the cache key"
+    required: false
+    type: string
   working-directory:
     description: "Working directory to restore/install"
     default: ""
@@ -17,7 +22,7 @@ runs:
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/assets
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/public/vite-test
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/app/assets/builds
-        key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}-dir-${{ inputs.working-directory }}
+        key: ${{ runner.os }}-precompiled-assets-${{ inputs.github_sha || github.sha }}-dir-${{ inputs.working-directory }}
 
     - name: Compile assets
       if: ${{ steps.assets-cache.outputs.cache-hit != 'true' }}
