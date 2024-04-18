@@ -1,6 +1,10 @@
 name: "Precompile Assets"
 
 inputs:
+  install-dependencies:
+    description: "Whether or not to install dependencies"
+    default: false
+    required: false
   working-directory:
     description: "Working directory to restore/install"
     default: ""
@@ -20,7 +24,7 @@ runs:
         key: ${{ runner.os }}-precompiled-assets-${{ github.sha }}-dir-${{ inputs.working-directory }}
 
     - name: Compile assets
-      if: ${{ steps.assets-cache.outputs.cache-hit != 'true' }}
+      if: ${{ steps.assets-cache.outputs.cache-hit != 'true' || inputs.install-dependencies == 'true' }}
       run: NODE_ENV=development bundle exec rake assets:precompile
       shell: bash
       working-directory: ${{ inputs.working-directory }}

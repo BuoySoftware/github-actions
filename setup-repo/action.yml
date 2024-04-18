@@ -96,6 +96,7 @@ runs:
     - name: Precompile test assets
       uses: BuoySoftware/github-actions/precompile-assets@main
       with:
+        install-dependencies: true
         working-directory: ${{ inputs.working_directory }}
 
     - name: Create, load and seed repo database
