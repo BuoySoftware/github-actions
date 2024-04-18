@@ -90,7 +90,6 @@ runs:
     - name: Install Node
       uses: BuoySoftware/github-actions/setup-node@vo/test
       with:
-        force_install_dependencies: true
         node-version: ${{ steps.repo_node_vers.outputs.v }}
         github_packages_token: ${{ inputs.github_packages_token }}
         working-directory: ${{ inputs.working_directory }}
