@@ -41,6 +41,8 @@ runs:
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
         key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+        restore-keys: |
+          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
