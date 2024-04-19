@@ -99,16 +99,16 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
-    - name: bin/vite
-      run: bin/vite info
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-
     - name: Precompile test assets
       uses: BuoySoftware/github-actions/precompile-assets@main
       with:
         github_sha: ${{ env.repo_sha }}
         working-directory: ${{ inputs.working_directory }}
+
+    - name: bin/vite
+      run: bin/vite info
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
 
     - name: Create, load and seed repo database
       run: bundle exec rake db:drop db:create db:schema:load ${{ inputs.extra_rake_tasks }}
