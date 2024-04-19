@@ -33,7 +33,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Restore yarn cache, if exists
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       if: ${{ inputs.install-dependencies == 'true' }}
       id: yarn-cache
       with:
@@ -41,8 +41,6 @@ runs:
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
         key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
-        restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
