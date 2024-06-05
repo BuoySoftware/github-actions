@@ -59,9 +59,12 @@ runs:
 
     - name: Check if the correct ref is checked out
       run: |
-        input_ref=${{ inputs.ref || '' }}
+        input_ref=${{ inputs.ref }}
 
-        [ -n "$input_ref" ] && exit 0
+        if [ -z "$input_ref" ]; then
+          echo "No ref provided."
+          exit 0
+        fi
 
         if [[ "$(git rev-parse HEAD)" != "$(git rev-parse $input_ref)" ]]; then
           echo "Error: Incorrect ref checked out."
