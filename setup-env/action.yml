@@ -23,22 +23,14 @@ runs:
   steps:
     - name: Set up environment variable file
       run: |
-        # Create a placeholder file to store the environment variables
-        printf '%s\n' "${{ inputs.env_vars }}" >> placeholder.txt
+        # Store environment variables in a .env file
+        printf '%s\n' "${{ inputs.env_vars }}" >> .env
 
         # Use lvh.me as the host for specific environment variables
         ARRAY=(${{ inputs.replace_vars_with_lvh_host }})
         for i in "${ARRAY[@]}"
         do
-          sed -r -i -E "s/($i=.*)localhost/\1lvh.me/" placeholder.txt
+          sed -r -i -E "s/($i=.*)localhost/\1lvh.me/" .env
         done
-
-        # Copy placeholder.txt into .env.sample and create a new .env file
-        awk -F= '{a[$1]=$2}END{for(i in a) print i "=" a[i]}' .env.sample placeholder.txt > .env
-
-        # Cleanup the .env file
-        sed -r -i -E '/^[[:blank:]]*#/d;s/#.*//' .env
-        sed -r -i -E 's/^=//' .env
-        sort .env -o .env
       shell: bash
       working-directory: ${{ inputs.working_directory }}
