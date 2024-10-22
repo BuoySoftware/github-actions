@@ -6,7 +6,7 @@ runs:
   steps:
     - name: Store playwright version
       run: |
-        pw_version=$(yarn info @playwright/test -A --json | jq -r '.data.version')
+        pw_version=$(yarn list --pattern @playwright/test --json | jq -r '.data.trees[0].name | split("@")[2]')
         echo "Playwright version: $pw_version"
         echo "PLAYWRIGHT_VERSION=$pw_version" >> $GITHUB_ENV
       shell: bash
