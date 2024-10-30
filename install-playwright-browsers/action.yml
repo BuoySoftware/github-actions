@@ -1,5 +1,12 @@
 name: Cache playwright browsers
 
+inputs:
+  with_webkit:
+    default: "false"
+    description: Whether to install webkit browsers
+    required: false
+    type: boolean
+
 runs:
   using: "composite"
 
@@ -22,5 +29,10 @@ runs:
       if: ${{ steps.cache-playwright-browsers.outputs.cache-hit != 'true' }}
       run: |
         yarn playwright install chromium --with-deps
+      shell: bash
+
+    - name: Install Webkit Browsers
+      if: ${{ inputs.with_webkit == 'true' }}
+      run: |
         yarn playwright install webkit --with-deps
       shell: bash
