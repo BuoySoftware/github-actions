@@ -6,11 +6,6 @@ inputs:
     description: Environment variables to set
     required: false
     type: string
-  replace_vars_with_lvh_host:
-    default: ""
-    description: Space delimited list of environment variables to replace localhost with lvh.me
-    required: false
-    type: string
   working_directory:
     default: "."
     description: Desired working directory for the repository
@@ -25,12 +20,5 @@ runs:
       run: |
         # Store environment variables in a .env file
         printf '%s\n' "${{ inputs.env_vars }}" >> .env
-
-        # Use lvh.me as the host for specific environment variables
-        ARRAY=(${{ inputs.replace_vars_with_lvh_host }})
-        for i in "${ARRAY[@]}"
-        do
-          sed -r -i -E "s/($i=.*)localhost/\1lvh.me/" .env
-        done
       shell: bash
       working-directory: ${{ inputs.working_directory }}
