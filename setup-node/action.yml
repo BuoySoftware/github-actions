@@ -21,7 +21,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v3
+    - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
 
@@ -33,7 +33,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Restore yarn cache, if exists
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       if: ${{ inputs.install-dependencies == 'true' }}
       id: yarn-cache
       with:
