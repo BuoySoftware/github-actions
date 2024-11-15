@@ -29,11 +29,6 @@ inputs:
     description: The branch, tag or SHA to checkout, ie `v1.2.0`
     required: false
     type: string
-  replace_vars_with_lvh_host:
-    default: ""
-    description: Space delimited list of environment variables to replace localhost with lvh.me
-    required: false
-    type: string
   repo:
     description: Full repository name (Org/Repo)
     required: true
@@ -88,7 +83,6 @@ runs:
       uses: BuoySoftware/github-actions/setup-env@main
       with:
         env_vars: ${{ inputs.env_vars }}
-        replace_vars_with_lvh_host: ${{ inputs.replace_vars_with_lvh_host }}
         working_directory: ${{ inputs.working_directory }}
 
     - name: Install Ruby for repo
