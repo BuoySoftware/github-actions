@@ -41,7 +41,7 @@ runs:
 
   steps:
     - name: Checkout Manifests Repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         path: ${{ inputs.working_directory }}
         repository: ${{ inputs.manifests_repository }}
