@@ -43,34 +43,66 @@ runs:
   using: "composite"
 
   steps:
-    - name: Checkout Repo
+    - name: Determine ref to checkout
+      id: ref_check
+      run: |
+        ref="${{ inputs.ref }}"
+        if [[ "$ref" =~ ^[a-f0-9]{40}$ ]]; then
+          echo "✅ Full SHA detected"
+          echo "ref_to_checkout=$ref" >> $GITHUB_OUTPUT
+        elif [[ "$ref" =~ ^[a-f0-9]{7,39}$ ]]; then
+          echo "⚠️ Short SHA detected, will checkout main first"
+          echo "ref_to_checkout=main" >> $GITHUB_OUTPUT
+        else
+          echo "🔖 Tag or branch detected"
+          echo "ref_to_checkout=$ref" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
+    - name: Checkout repo
       uses: actions/checkout@v4
       with:
+        fetch-depth: 0
         fetch-tags: true
         path: ${{ inputs.working_directory }}
-        ref: ${{ inputs.ref || '' }}
+        ref: ${{ steps.ref_check.outputs.ref_to_checkout }}
         repository: ${{ inputs.repo }}
         token: ${{ inputs.personal_access_token }}
 
-    - name: Check if the correct ref is checked out
+    - name: If needed, checkout the short SHA manually
+      if: ${{ steps.ref_check.outputs.ref_to_checkout != inputs.ref }}
       run: |
-        input_ref=${{ inputs.ref }}
-
-        if [ -z "$input_ref" ]; then
-          echo "No ref provided."
-          exit 0
-        fi
-
-        if [[ "$(git rev-parse HEAD)" != "$(git rev-parse $input_ref)" ]]; then
-          echo "Error: Incorrect ref checked out."
-          exit 1
-        fi
+        echo "🔄 Checking out ref: ${{ inputs.ref }}"
+        git fetch origin
+        git checkout "${{ inputs.ref }}"
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
-    - name: Gather github sha
+    - name: Validate the checked out ref
+      if: ${{ inputs.ref != '' }}
       run: |
-        echo "repo_sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
+        input_ref="${{ inputs.ref }}"
+
+        echo "🔍 Resolving input ref: $input_ref"
+        resolved_ref=$(git rev-parse "${input_ref}^{}" 2>/dev/null || true)
+
+        if [ -z "$resolved_ref" ]; then
+          echo "❌ Could not resolve ref '$input_ref'."
+          git show-ref
+          exit 1
+        fi
+
+        current_head=$(git rev-parse HEAD)
+
+        if [[ "$current_head" != "$resolved_ref" ]]; then
+          echo "❌ Checked out ref does not match input ref."
+          echo "Current HEAD: $current_head"
+          echo "Expected ref: $resolved_ref"
+          exit 1
+        fi
+
+        echo "✅ Ref '$input_ref' correctly checked out as '$resolved_ref'"
+        echo "repo_sha=$resolved_ref" >> "$GITHUB_OUTPUT"
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
