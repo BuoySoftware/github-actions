@@ -1,0 +1,99 @@
+name: Checkout with full SHA, short SHA, or tag/branch
+description: |
+  This action checks out a repository using a full SHA, short SHA, or tag/branch.
+  
+  It handles the case where a short SHA is provided by checking out the main branch first,
+  then checking out the short SHA manually if needed.
+
+  It also validates that the checked out ref matches the input ref.
+
+inputs:
+  personal_access_token:
+    description: Personal access token generated for the repository
+    required: true
+    type: string
+  ref:
+    default: ""
+    description: The branch, tag or SHA to checkout, ie `v1.2.0`
+    required: false
+    type: string
+  repo:
+    description: Full repository name (Org/Repo)
+    required: true
+    type: string
+  working_directory:
+    default: "."
+    description: Desired working directory for the repository
+    required: false
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Determine ref to checkout
+      id: ref_check
+      run: |
+        ref="${{ inputs.ref }}"
+
+        if [[ -z "$ref" ]]; then
+          echo "ℹ️ No ref provided, defaulting to 'main'"
+          echo "ref_to_checkout=main" >> $GITHUB_OUTPUT
+        elif [[ "$ref" =~ ^[a-f0-9]{40}$ ]]; then
+          echo "ℹ️ Full SHA detected"
+          echo "ref_to_checkout=$ref" >> $GITHUB_OUTPUT
+        elif [[ "$ref" =~ ^[a-f0-9]{7,39}$ ]]; then
+          echo "ℹ️ Short SHA detected, will checkout main first"
+          echo "ref_to_checkout=main" >> $GITHUB_OUTPUT
+        else
+          echo "ℹ️ Tag or branch detected"
+          echo "ref_to_checkout=$ref" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+        path: ${{ inputs.working_directory }}
+        ref: ${{ steps.ref_check.outputs.ref_to_checkout }}
+        repository: ${{ inputs.repo }}
+        token: ${{ inputs.personal_access_token }}
+
+    - name: If needed, checkout the short SHA manually
+      if: ${{ steps.ref_check.outputs.ref_to_checkout != inputs.ref && inputs.ref != '' }}
+      run: |
+        echo "ℹ️ Checking out ref: ${{ inputs.ref }}"
+        git fetch origin
+        git checkout "${{ inputs.ref }}"
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+
+    - name: Validate the checked out ref
+      if: ${{ inputs.ref != '' }}
+      run: |
+        input_ref="${{ inputs.ref }}"
+
+        echo "ℹ️ Resolving input ref: $input_ref"
+        resolved_ref=$(git rev-parse "${input_ref}^{}" 2>/dev/null || true)
+
+        if [ -z "$resolved_ref" ]; then
+          echo "❌ Could not resolve ref '$input_ref'."
+          git show-ref
+          exit 1
+        fi
+
+        current_head=$(git rev-parse HEAD)
+
+        if [[ "$current_head" != "$resolved_ref" ]]; then
+          echo "❌ Checked out ref does not match input ref."
+          echo "Current HEAD: $current_head"
+          echo "Expected ref: $resolved_ref"
+          exit 1
+        fi
+
+        echo "✅ Ref '$input_ref' correctly checked out as '$resolved_ref'"
+        echo "repo_sha=$resolved_ref" >> "$GITHUB_OUTPUT"
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}

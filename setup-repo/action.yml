@@ -43,36 +43,13 @@ runs:
   using: "composite"
 
   steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v4
+    - name: Checkout code
+      uses: BuoySoftware/github-actions/checkout@main
       with:
-        fetch-tags: true
-        path: ${{ inputs.working_directory }}
-        ref: ${{ inputs.ref || '' }}
-        repository: ${{ inputs.repo }}
-        token: ${{ inputs.personal_access_token }}
-
-    - name: Check if the correct ref is checked out
-      run: |
-        input_ref=${{ inputs.ref }}
-
-        if [ -z "$input_ref" ]; then
-          echo "No ref provided."
-          exit 0
-        fi
-
-        if [[ "$(git rev-parse HEAD)" != "$(git rev-parse $input_ref)" ]]; then
-          echo "Error: Incorrect ref checked out."
-          exit 1
-        fi
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-
-    - name: Gather github sha
-      run: |
-        echo "repo_sha=$(git rev-parse HEAD)" >> $GITHUB_ENV
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
+        personal_access_token: ${{ inputs.personal_access_token }}
+        ref: ${{ inputs.ref }}
+        repo: ${{ inputs.repo }}
+        working_directory: ${{ inputs.working_directory }}
 
     - name: Install Vips
       if: endsWith(inputs.repo, 'BuoyRails')
