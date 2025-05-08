@@ -106,7 +106,7 @@ runs:
             TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
           fi
 
-          docker build . $TAGS $BUILD_ARGS
+          docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG
           docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
