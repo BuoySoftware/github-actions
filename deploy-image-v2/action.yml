@@ -30,6 +30,10 @@ inputs:
     description: Personal access token generated for the manifests repository
     required: true
     type: string
+  slack_webhook_url:
+    description: Slack webhook URL for notifications
+    required: false
+    type: string
   working_directory:
     default: "."
     description: Desired working directory for the manifests repository
@@ -77,3 +81,22 @@ runs:
         git commit -am "Update deployment image tag for ${{ inputs.application }}-${{ inputs.environment }} to ${{ inputs.image_tag }} [skip ci]"
         git pull --rebase --autostash
         git push
+
+    - name: Notify Slack on failure
+      if: failure() && inputs.slack_webhook_url != ''
+      uses: 8398a7/action-slack@v3
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
+        AS_REF: ${{ github.ref }}
+        AS_AUTHOR: ${{ github.actor }}
+      with:
+        status: custom
+        fields: workflow,job,commit,repo,ref,author,took
+        custom_payload: |
+          {
+            "attachments": [{
+              "color": "danger",
+              "mrkdwn_in": ["text"],
+              "text": ":x: *Image deployment failed*\n*Ref:* ${{ env.AS_REF }}\n*Author:* ${{ env.AS_AUTHOR }}\n\nPlease check the CI job logs for details: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+            }]
+          }
