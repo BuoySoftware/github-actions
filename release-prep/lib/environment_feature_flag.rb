@@ -1,6 +1,6 @@
 class EnvironmentFeatureFlag
-  FEATURE_MODULE_REGEX = /(Feature(::[\w]+)+)/
-  UNDERSCORE_REGEX = /(?<=[a-z])(?=[A-Z])|::/
+  FEATURE_MODULE_REGEX = %r{Feature(::[\w]+)+}.freeze
+  UNDERSCORE_REGEX = %r{(?<=[a-z])(?=[A-Z])|::}.freeze
 
   def self.detect(changes:)
     new(changes:).detect
