@@ -1,5 +1,7 @@
 require "octokit"
 require_relative "environment_feature_flag"
+require_relative "octokit_helper"
+require_relative "pull_request"
 
 class Compare
   attr_reader :base_ref, :head_ref
@@ -10,9 +12,7 @@ class Compare
   end
 
   def pull_requests
-    @pull_requests ||= compare.commits.flat_map do |commit|
-      octokit_client.commit_pulls(repository.id, commit.sha)
-    end.uniq(&:number)
+    @pull_requests ||= PullRequest.detect(compare:)
   end
 
   def environment_feature_flags
@@ -22,20 +22,10 @@ class Compare
   private
 
   def compare
-    @compare ||= octokit_client.compare(
-      repository.id,
+    @compare ||= OctokitHelper.client.compare(
+      OctokitHelper.repository.id,
       @base_ref,
       @head_ref
-    )
-  end
-
-  def octokit_client
-    @octokit_client ||= Octokit::Client.new(access_token: ENV.fetch("GITHUB_PAT"))
-  end
-
-  def repository
-    @repository ||= octokit_client.repository(
-      "#{ENV.fetch('GITHUB_ORG')}/#{ENV.fetch('GITHUB_REPO')}"
     )
   end
 
