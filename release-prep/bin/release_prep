@@ -9,7 +9,7 @@ compare = Compare.new(base_ref: options.base_ref, head_ref: options.head_ref)
 
 puts "\nAnalyzing changes between #{options.base_ref} and #{options.head_ref}..."
 puts "\nPull Requests:"
-compare.prs.each do |pr|
+compare.pull_requests.each do |pr|
   puts "- ##{pr.number}: #{pr.title}"
 end
 

@@ -1,5 +1,4 @@
 require "octokit"
-require_relative "pull_request"
 require_relative "environment_feature_flag"
 
 class Compare
@@ -10,19 +9,9 @@ class Compare
     @head_ref = head_ref
   end
 
-  def prs
-    @prs ||= compare.commits.flat_map do |commit|
-      prs = octokit_client.commit_pulls(repository.id, commit.sha)
-      if prs.empty?
-        puts "No PRs found for commit: #{commit.sha}"
-        []
-      else
-        prs.map do |pr_data|
-          pr_commits = octokit_client.pull_request_commits(repository.id, pr_data.number)
-          commit_messages = pr_commits.map { |c| c.commit.message }
-          PullRequest.new(pr_data, commit_messages: commit_messages)
-        end
-      end
+  def pull_requests
+    @pull_requests ||= compare.commits.flat_map do |commit|
+      octokit_client.commit_pulls(repository.id, commit.sha)
     end.uniq(&:number)
   end
 
