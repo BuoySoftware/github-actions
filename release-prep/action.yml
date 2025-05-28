@@ -1,0 +1,55 @@
+name: 'Release Prep'
+description: 'Prepares a release by comparing base and head refs'
+
+inputs:
+  base_ref:
+    description: 'The base reference to compare against'
+    required: true
+  head_ref:
+    description: 'The head reference to compare'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate Environment Variables
+      shell: bash
+      run: |
+        required_vars=(
+          "ASANA_PAT"
+          "ASANA_PROJECT_ID"
+          "ASANA_SECTION_ID"
+          "ATLASSIAN_API_TOKEN"
+          "ATLASSIAN_EMAIL"
+          "ATLASSIAN_URL"
+          "CONFLUENCE_RELEASES_SPACE_KEY"
+          "CONFLUENCE_RELEASES_VERSIONS_PARENT_PAGE_ID"
+          "GITHUB_ORG"
+          "GITHUB_PAT"
+          "GITHUB_REPO"
+        )
+        
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+          if [ -z "${!var}" ]; then
+            missing_vars+=("$var")
+          fi
+        done
+        
+        if [ ${#missing_vars[@]} -ne 0 ]; then
+          echo "Error: The following required environment variables are not set:"
+          printf '%s\n' "${missing_vars[@]}"
+          exit 1
+        fi
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 'latest'
+        bundler-cache: true
+        working-directory: './release-prep'
+
+    - name: Run Release Prep
+      shell: bash
+      working-directory: './release-prep'
+      run: |
+        ./bin/release_prep --base_ref="${{ inputs.base_ref }}" --head_ref="${{ inputs.head_ref }}" 

@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+
+require_relative '../lib/cli_options'
+
+options = CliOptions.parse
+
+puts "Base ref: #{options.base_ref}"
+puts "Head ref: #{options.head_ref}" 
