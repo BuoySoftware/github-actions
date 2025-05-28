@@ -45,11 +45,16 @@ runs:
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: 'latest'
+        bundler: 'latest'
         bundler-cache: true
         working-directory: './release-prep'
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: './release-prep'
+      run: bundle install
 
     - name: Run Release Prep
       shell: bash
       working-directory: './release-prep'
-      run: |
-        ./bin/release_prep --base_ref="${{ inputs.base_ref }}" --head_ref="${{ inputs.head_ref }}" 
+      run: bundle exec ./bin/release_prep --base_ref="${{ inputs.base_ref }}" --head_ref="${{ inputs.head_ref }}" 

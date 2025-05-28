@@ -1,8 +1,19 @@
 #!/usr/bin/env ruby
 
 require_relative '../lib/cli_options'
+require_relative '../lib/compare'
 
 options = CliOptions.parse
 
-puts "Base ref: #{options.base_ref}"
-puts "Head ref: #{options.head_ref}" 
+compare = Compare.new(base_ref: options.base_ref, head_ref: options.head_ref)
+
+puts "\nAnalyzing changes between #{options.base_ref} and #{options.head_ref}..."
+puts "\nPull Requests:"
+compare.prs.each do |pr|
+  puts "- ##{pr.number}: #{pr.title}"
+end
+
+puts "\nFeature Flags:"
+compare.features.each do |feature|
+  puts "- #{feature}"
+end
