@@ -57,4 +57,4 @@ runs:
     - name: Run Release Prep
       shell: bash
       working-directory: './release-prep'
-      run: bundle exec ./bin/release_prep --base_ref="${{ inputs.base_ref }}" --head_ref="${{ inputs.head_ref }}" 
+      run: bundle exec ./bin/release_prep --base-ref="${{ inputs.base_ref }}" --head-ref="${{ inputs.head_ref }}" 
