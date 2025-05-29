@@ -71,6 +71,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  faraday (~> 2.9)
   jira-ruby (~> 2.2)
   octokit (~> 8.1)
 

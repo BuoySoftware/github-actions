@@ -1,5 +1,6 @@
 require_relative "compare"
 require_relative "version"
+require_relative "release_note"
 
 class Release
   def self.prepare(base_ref:, head_ref:)
@@ -44,6 +45,19 @@ class Release
     puts "Jira Versions:"
     version.jira_versions.each do |jira_version|
       puts "  - #{jira_version.attrs["self"]}"
+    end
+
+    puts "Release Notes:"
+    release_note = ReleaseNote.find_or_create(version)
+    puts "Main Page:"
+    puts "  - #{release_note.main_page["title"]}: #{release_note.main_page.dig("_links", "base")}#{release_note.main_page.dig("_links", "webui")}"
+    puts "Technical Notes:"
+    release_note.technical_notes.each do |technical_note|
+      puts "  - #{technical_note["title"]}: #{technical_note.dig("_links", "base")}#{technical_note.dig("_links", "webui")}"
+    end
+    puts "Deployment Plans:"
+    release_note.deployment_plans.each do |deployment_plan|
+      puts "  - #{deployment_plan["title"]}: #{deployment_plan.dig("_links", "base")}#{deployment_plan.dig("_links", "webui")}"
     end
   end
 
