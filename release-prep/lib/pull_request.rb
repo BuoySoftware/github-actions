@@ -6,7 +6,8 @@ class PullRequest
   JIRA_TICKET_REGEX = %r{[A-Z]+-\d+}.freeze
 
   def self.detect(compare:)
-    compare.commits.flat_map do |commit|
+    compare.commits.flat_map.with_index do |commit, index|
+      puts "Processing commit #{index + 1} of #{compare.commits.size}: #{commit.sha}"
       OctokitHelper.client.commit_pulls(OctokitHelper.repository.id, commit.sha)
     end.uniq(&:number).map do |pr_data|
       new(
@@ -27,17 +28,21 @@ class PullRequest
 
   def asana_links
     @asana_links ||= [
-      *body.scan(ASANA_LINK_REGEX),
-      *body.scan(ASANA_LEGACY_LINK_REGEX)
-    ].uniq
+      *body&.scan(ASANA_LINK_REGEX),
+      *body&.scan(ASANA_LEGACY_LINK_REGEX)
+    ].flatten.uniq
   end
 
   def jira_tickets
     @jira_tickets ||= [
       *title.scan(JIRA_TICKET_REGEX),
-      *body.scan(JIRA_TICKET_REGEX),
+      *body&.scan(JIRA_TICKET_REGEX),
       *commit_messages.map { |message| message.scan(JIRA_TICKET_REGEX) }.flatten
-    ].uniq
+    ].flatten.uniq
+  end
+
+  def jira_projects
+    @jira_projects ||= jira_tickets.map { |ticket| ticket.split("-").first }.uniq
   end
 
   private

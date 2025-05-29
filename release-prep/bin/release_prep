@@ -1,27 +1,8 @@
 #!/usr/bin/env ruby
 
 require_relative '../lib/cli_options'
-require_relative '../lib/compare'
+require_relative '../lib/release'
 
 options = CliOptions.parse
 
-compare = Compare.new(base_ref: options.base_ref, head_ref: options.head_ref)
-
-puts "\nAnalyzing changes between #{options.base_ref} and #{options.head_ref}..."
-puts "\nPull Requests:"
-compare.pull_requests.each do |pr|
-  puts "- ##{pr.number}: #{pr.title}"
-  puts "  - Asana Links:"
-  pr.asana_links.each do |link|
-    puts "    - #{link}"
-  end
-  puts "  - Jira Tickets:"
-  pr.jira_tickets.each do |ticket|
-    puts "    - #{ticket}"
-  end
-end
-
-puts "\nFeature Flags:"
-compare.environment_feature_flags.each do |feature|
-  puts "- #{feature}"
-end
+Release.prepare(options)
