@@ -1,4 +1,5 @@
 require_relative "compare"
+require_relative "jira_version"
 require_relative "version"
 require_relative "release_note"
 
@@ -15,7 +16,7 @@ class Release
   attr_reader :base_ref, :head_ref
 
   def prepare
-    puts "Version: #{Version.from_ref(compare.head_ref)}"
+    puts "Version: #{version.name}"
 
     puts "Analyzing changes between #{compare.base_ref} and #{compare.head_ref}"
 
@@ -43,7 +44,8 @@ class Release
     end
 
     puts "Jira Versions:"
-    version.jira_versions.each do |jira_version|
+    jira_versions.each do |jira_version|
+      puts jira_version
       puts "  - #{jira_version.attrs["self"]}"
     end
 
@@ -64,7 +66,7 @@ class Release
   private
 
   def version
-    @version ||= Version.new(compare.head_ref, jira_projects:)
+    @version ||= Version.from_ref(compare.head_ref)
   end
 
   def compare
@@ -73,5 +75,11 @@ class Release
 
   def jira_projects
     @jira_projects ||= compare.pull_requests.flat_map(&:jira_projects).uniq
+  end
+
+  def jira_versions
+    @jira_versions ||= jira_projects.map do |jira_project_name|
+      JiraVersion.find_or_create(jira_project_name:, version:)
+    end
   end
 end
