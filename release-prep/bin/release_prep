@@ -5,4 +5,4 @@ require_relative '../lib/release'
 
 options = CliOptions.parse
 
-Release.prepare(options)
+Release.prepare(base_ref: options.base_ref, head_ref: options.head_ref)

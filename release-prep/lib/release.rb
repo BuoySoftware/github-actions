@@ -14,7 +14,7 @@ class Release
   attr_reader :base_ref, :head_ref
 
   def prepare
-    puts "Version: #{version}"
+    puts "Version: #{Version.from_ref(compare.head_ref)}"
 
     puts "Analyzing changes between #{compare.base_ref} and #{compare.head_ref}"
 
@@ -37,13 +37,20 @@ class Release
     end
 
     puts "Jira Projects:"
-    jira_projects.each { |jira_project| puts "  - #{jira_project}" }
+    jira_projects.each do |jira_project|
+      puts "  - #{jira_project}"
+    end
+
+    puts "Jira Versions:"
+    version.jira_versions.each do |jira_version|
+      puts "  - #{jira_version.attrs["self"]}"
+    end
   end
 
   private
 
   def version
-    @version ||= Version.new(compare.head_ref)
+    @version ||= Version.new(compare.head_ref, jira_projects:)
   end
 
   def compare
