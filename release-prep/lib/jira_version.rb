@@ -7,14 +7,34 @@ class JiraVersion
     @version = version
     @jira_project_name = jira_project_name
     @tickets = tickets
+    @jira_version = find_or_create_jira_version
   end
 
-  attr_reader :jira_project_name, :tickets, :version
+  attr_reader :jira_project_name, :jira_version, :tickets, :version
 
   def find_or_create
-    jira_version = find_or_create_jira_version
-    add_tickets(jira_version)
-    jira_version
+    tickets.each do |ticket|
+      puts "Adding #{ticket} to #{version.name}"
+      issue = JiraHelper.client.Issue.find(ticket)
+      existing_fix_versions = issue.fields["fixVersions"] || []
+      if existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
+        puts "Version #{jira_version.name} already present in fixVersions for issue #{ticket}"
+      else
+        issue.save({
+          "fields" => {
+            "fixVersions" => existing_fix_versions.map { |fv|
+              { "id" => fv["id"] }
+            } + [{ "id" => jira_version.attrs["id"] }],
+          },
+        })
+      end
+    end
+
+    self
+  end
+
+  def url
+    "#{ENV.fetch('ATLASSIAN_URL')}/projects/#{jira_project_name}/versions/#{jira_version.attrs["id"]}"
   end
 
   private

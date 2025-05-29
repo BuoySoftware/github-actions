@@ -45,7 +45,7 @@ class Release
 
     puts "Jira Versions:"
     jira_versions.each do |jira_version|
-      puts "  - #{jira_version.attrs["self"]}"
+      puts "  - #{jira_version.url}"
     end
 
     puts "Release Notes:"
