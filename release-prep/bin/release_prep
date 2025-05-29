@@ -1,8 +1,17 @@
 #!/usr/bin/env ruby
 
 require_relative '../lib/cli_options'
+require_relative '../lib/environment_validator'
 require_relative '../lib/release'
 
-options = CliOptions.parse
-
-Release.prepare(base_ref: options.base_ref, head_ref: options.head_ref)
+begin
+  EnvironmentValidator.validate!
+  options = CliOptions.parse
+  Release.prepare(base_ref: options.base_ref, head_ref: options.head_ref)
+rescue EnvironmentValidator::EnvironmentError => e
+  puts "Error: #{e.message}"
+  exit 1
+rescue StandardError => e
+  puts "Error: #{e.message}"
+  exit 1
+end
