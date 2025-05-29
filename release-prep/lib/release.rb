@@ -45,7 +45,6 @@ class Release
 
     puts "Jira Versions:"
     jira_versions.each do |jira_version|
-      puts jira_version
       puts "  - #{jira_version.attrs["self"]}"
     end
 
@@ -79,7 +78,17 @@ class Release
 
   def jira_versions
     @jira_versions ||= jira_projects.map do |jira_project_name|
-      JiraVersion.find_or_create(jira_project_name:, version:)
+      JiraVersion.find_or_create(
+        jira_project_name:,
+        tickets: jira_tickets_by_project(jira_project_name),
+        version:
+      )
     end
+  end
+
+  def jira_tickets_by_project(jira_project_name)
+    compare.pull_requests.flat_map do |pr|
+      pr.jira_tickets.select { |ticket| ticket.start_with?(jira_project_name) }
+    end.uniq
   end
 end

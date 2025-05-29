@@ -1,16 +1,25 @@
 class JiraVersion
-  def self.find_or_create(jira_project_name:, version:)
-    new(jira_project_name:, version:).find_or_create
+  def self.find_or_create(jira_project_name:, tickets:, version:)
+    new(jira_project_name:, tickets:, version:).find_or_create
   end
 
-  def initialize(jira_project_name:, version:)
+  def initialize(jira_project_name:, tickets:, version:)
     @version = version
     @jira_project_name = jira_project_name
+    @tickets = tickets
   end
 
-  attr_reader :jira_project_name, :version
+  attr_reader :jira_project_name, :tickets, :version
 
   def find_or_create
+    jira_version = find_or_create_jira_version
+    add_tickets(jira_version)
+    jira_version
+  end
+
+  private
+
+  def find_or_create_jira_version
     if existing_version
       puts "#{version.name} already exists in project #{jira_project_name}"
       existing_version
@@ -19,8 +28,6 @@ class JiraVersion
       create_version
     end
   end
-
-  private
 
   def jira_project
     @jira_project ||= JiraHelper.client.Project.find(jira_project_name)
@@ -41,5 +48,24 @@ class JiraVersion
     )
     jira_version.fetch
     jira_version
+  end
+
+  def add_tickets(jira_version)
+    tickets.each do |ticket|
+      puts "Adding #{ticket} to #{version.name}"
+      issue = JiraHelper.client.Issue.find(ticket)
+      existing_fix_versions = issue.fields["fixVersions"] || []
+      if existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
+        puts "Version #{jira_version.name} already present in fixVersions for issue #{ticket}"
+      else
+        issue.save({
+          "fields" => {
+            "fixVersions" => existing_fix_versions.map { |fv|
+              { "id" => fv["id"] }
+            } + [{ "id" => jira_version.attrs["id"] }],
+          },
+        })
+      end
+    end
   end
 end
