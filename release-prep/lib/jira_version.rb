@@ -17,7 +17,7 @@ class JiraVersion
   def find_or_create
     puts "Processing #{tickets.count} tickets for #{name}..."
     tickets.each do |ticket|
-      JiraIssue.find_or_create(jira_version:, ticket_name: ticket)
+      JiraIssue.new(ticket:).add_to_jira_version(jira_version:)
     end
 
     self
