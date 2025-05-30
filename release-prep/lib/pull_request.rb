@@ -21,6 +21,7 @@ class PullRequest
 
   def initialize(body:, html_url:, number:, title:)
     @body = body
+    @html_url = html_url
     @number = number
     @title = title
   end

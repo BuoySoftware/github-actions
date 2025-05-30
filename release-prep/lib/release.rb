@@ -1,5 +1,6 @@
 require_relative "compare"
 require_relative "jira_release_card"
+require_relative "asana_release_card"
 require_relative "jira_version"
 require_relative "release_log"
 require_relative "release_note"
@@ -25,6 +26,7 @@ class Release
     create_jira_versions
     create_release_note
     create_jira_release_card
+    create_asana_release_card
     ReleaseLog.put(release: self)
   end
 
@@ -52,5 +54,9 @@ class Release
 
   def create_jira_release_card
     @jira_release_card ||= JiraReleaseCard.create(release: self)
+  end
+
+  def create_asana_release_card
+    @asana_release_card ||= AsanaReleaseCard.create(release: self)
   end
 end
