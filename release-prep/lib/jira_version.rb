@@ -1,4 +1,4 @@
-require_relative "jira_version_issue"
+require_relative "jira_issue"
 
 class JiraVersion
   def self.find_or_create(jira_project_name:, tickets:, version:)
@@ -17,7 +17,7 @@ class JiraVersion
   def find_or_create
     puts "Processing #{tickets.count} tickets for #{name}..."
     tickets.each do |ticket|
-      JiraVersionIssue.find_or_create(jira_version:, ticket_name: ticket)
+      JiraIssue.find_or_create(jira_version:, ticket_name: ticket)
     end
 
     self

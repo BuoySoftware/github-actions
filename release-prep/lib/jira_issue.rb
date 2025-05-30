@@ -1,4 +1,4 @@
-class JiraVersionIssue
+class JiraIssue
   def self.find_or_create(jira_version:, ticket_name:)
     new(jira_version:, ticket_name:).find_or_create
   end
