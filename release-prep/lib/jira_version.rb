@@ -1,3 +1,5 @@
+require_relative "jira_version_issue"
+
 class JiraVersion
   def self.find_or_create(jira_project_name:, tickets:, version:)
     new(jira_project_name:, tickets:, version:).find_or_create
@@ -13,21 +15,9 @@ class JiraVersion
   attr_reader :jira_project_name, :jira_version, :tickets, :version
 
   def find_or_create
+    puts "Adding #{tickets.count} tickets to #{version.name}"
     tickets.each do |ticket|
-      puts "Adding #{ticket} to #{version.name}"
-      issue = JiraHelper.client.Issue.find(ticket)
-      existing_fix_versions = issue.fields["fixVersions"] || []
-      if existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
-        puts "Version #{jira_version.name} already present in fixVersions for issue #{ticket}"
-      else
-        issue.save({
-          "fields" => {
-            "fixVersions" => existing_fix_versions.map { |fv|
-              { "id" => fv["id"] }
-            } + [{ "id" => jira_version.attrs["id"] }],
-          },
-        })
-      end
+      JiraVersionIssue.find_or_create(jira_version:, ticket_name: ticket)
     end
 
     self
