@@ -39,6 +39,7 @@ class JiraReleaseCard
     ||Base Ref||#{release.compare.base_ref}|
     ||Head Ref||#{release.compare.head_ref}|
     ||Github Compare||[#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]|
+    ||Project Versions||#{project_versions}|
 
     ----
 
@@ -93,6 +94,12 @@ class JiraReleaseCard
         end.map(&:jira_tickets).flatten.uniq,
       }
     end
+  end
+
+  def project_versions
+    release.jira_versions.map do |jira_version|
+      "[#{jira_version.jira_project_name}|#{jira_version.url}]"
+    end.join("\n")
   end
 
   def asana_tasks
