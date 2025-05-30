@@ -19,6 +19,7 @@ class JiraReleaseCard
         "description" => description,
         "customfield_10298" => release.version.number,
         "customfield_10297" => { "value" => ENV.fetch("GITHUB_REPO") },
+        "customfield_10363" => release_note_link
       },
     }
     issue.save!(payload)
@@ -36,6 +37,8 @@ class JiraReleaseCard
 
     *Github Compare:* [#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]
 
+    ----
+
     h2. Issues By Project
 
     #{issues_by_project.map do |group|
@@ -46,6 +49,17 @@ class JiraReleaseCard
         end.join("\n")}
       MARKDOWN
     end.join("\n\n")}
+
+    ----
+
+    h2. Referenced Environment Feature Flags
+
+    |Environment Feature Flage|Enabled|
+    #{release.environment_feature_flags.map do |feature|
+      "|#{feature}|false|"
+    end.join("\n")}
+
+    ----
 
     h2. Pull Requests
 
@@ -59,6 +73,10 @@ class JiraReleaseCard
     end.join("\n\n")}
 
     MARKDOWN
+  end
+
+  def release_note_link
+    "#{release.release_note.main_page.dig("_links", "base")}#{release.release_note.main_page.dig("_links", "webui")}"
   end
 
   def issues_by_project
