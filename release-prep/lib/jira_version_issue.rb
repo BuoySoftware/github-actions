@@ -27,10 +27,4 @@ class JiraVersionIssue
         puts " - Added #{ticket_name} to #{jira_version.name}"
       end
   end
-
-  private
-
-  def version_name
-    @version_name ||= jira_version.attrs["name"]
-  end
 end

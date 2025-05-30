@@ -10,7 +10,7 @@ class EnvironmentValidator
     "CONFLUENCE_RELEASES_VERSIONS_PARENT_PAGE_ID",
     "GITHUB_ORG",
     "GITHUB_PAT",
-    "GITHUB_REPO"
+    "GITHUB_REPO",
   ].freeze
 
   def self.validate!

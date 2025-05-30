@@ -12,4 +12,8 @@ class Version
   def name
     "v#{ref.match(VERSION_REGEX)&.[](1)}"
   end
+
+  def number
+    "#{ref.match(VERSION_REGEX)&.[](1)}".to_f
+  end
 end

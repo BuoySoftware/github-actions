@@ -64,23 +64,4 @@ class JiraVersion
     jira_version.fetch
     jira_version
   end
-
-  def add_tickets(jira_version)
-    tickets.each do |ticket|
-      puts "Adding #{ticket} to #{version.name}"
-      issue = JiraHelper.client.Issue.find(ticket)
-      existing_fix_versions = issue.fields["fixVersions"] || []
-      if existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
-        puts "Version #{jira_version.name} already present in fixVersions for issue #{ticket}"
-      else
-        issue.save({
-          "fields" => {
-            "fixVersions" => existing_fix_versions.map { |fv|
-              { "id" => fv["id"] }
-            } + [{ "id" => jira_version.attrs["id"] }],
-          },
-        })
-      end
-    end
-  end
 end

@@ -1,0 +1,63 @@
+class JiraReleaseCard
+  def self.create(release:)
+    new(release:).create
+  end
+
+  def initialize(release:)
+    @release = release
+  end
+
+  attr_reader :release
+
+  def create
+    issue = JiraHelper.client.Issue.build
+    payload = {
+      "fields" => {
+        "project" => { "key" => "VERSIONS" },
+        "summary" => summary,
+        "issuetype" => { "name" => "Version" },
+        "description" => description,
+        "customfield_10298" => release.version.number,
+        "customfield_10297" => { "value" => ENV.fetch("GITHUB_REPO") },
+      },
+    }
+    issue.save!(payload)
+  end
+
+  private
+
+  def summary
+    "#{ENV.fetch("GITHUB_REPO")} #{release.version.name}"
+  end
+
+  def description
+    <<~MARKDOWN
+    h1. #{release.version.name}
+
+    *Github Compare: * [#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]
+
+    h2. Issues By Project
+
+    #{issues_by_project.map do |group|
+      <<~MARKDOWN
+        h3. #{group[:project]}
+        #{group[:tickets].map do |ticket|
+          " - #{ticket}"
+        end.join("\n")}
+      MARKDOWN
+    end.join("\n\n")}
+
+    MARKDOWN
+  end
+
+  def issues_by_project
+    release.compare.jira_projects.map do |jira_project|
+      {
+        project: jira_project,
+        tickets: release.pull_requests.select do |pr| 
+          pr.jira_projects.include?(jira_project) 
+        end.map(&:jira_tickets).flatten.uniq,
+      }
+    end
+  end
+end
