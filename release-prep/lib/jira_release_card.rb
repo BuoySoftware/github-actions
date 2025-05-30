@@ -33,9 +33,12 @@ class JiraReleaseCard
 
   def description
     <<~MARKDOWN
-    h1. #{release.version.name}
+    h1. #{summary}
 
-    *Github Compare:* [#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]
+    ||Version||#{release.version.number}|
+    ||Base Ref||#{release.compare.base_ref}|
+    ||Head Ref||#{release.compare.head_ref}|
+    ||Github Compare||[#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]|
 
     ----
 
@@ -50,11 +53,13 @@ class JiraReleaseCard
       MARKDOWN
     end.join("\n\n")}
 
+    #{asana_tasks}
+
     ----
 
     h2. Referenced Environment Feature Flags
 
-    |Environment Feature Flage|Enabled|
+    ||Environment Feature Flage||Enabled||
     #{release.environment_feature_flags.map do |feature|
       "|#{feature}|false|"
     end.join("\n")}
@@ -88,6 +93,20 @@ class JiraReleaseCard
         end.map(&:jira_tickets).flatten.uniq,
       }
     end
+  end
+
+  def asana_tasks
+    asana_links = release.pull_requests.map(&:asana_links).flatten.uniq
+
+    asana_links.any? ? <<~MARKDOWN : ""
+      ----
+
+      h2. Asana Tasks
+
+      #{asana_links.map do |link|
+        " - #{link}"
+      end.join("\n")}
+    MARKDOWN
   end
 
   def pull_requests_by_group
