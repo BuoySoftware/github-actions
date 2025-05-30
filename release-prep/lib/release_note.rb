@@ -79,7 +79,7 @@ class ReleaseNote
   end
 
   def main_page
-    @main_page ||= ConfluenceHelper.create_or_update_page(title: version_name)
+    @main_page ||= ConfluenceHelper.create_or_update_page(title: version.name)
   end
 
   def technical_notes
@@ -87,14 +87,14 @@ class ReleaseNote
       ConfluenceHelper.create_or_update_page(
         body: TECHNICAL_NOTE_TEMPLATE,
         parent_id: technical_note_page["id"],
-        title: "#{title} #{version_name}",
+        title: "#{title} #{version.name}",
       )
     end
   end
 
   def technical_note_page
     @technical_note_page ||= ConfluenceHelper.create_or_update_page(
-      title: "Technical Notes #{version_name}",
+      title: "Technical Notes #{version.name}",
       parent_id: main_page["id"]
     )
   end
@@ -104,21 +104,15 @@ class ReleaseNote
       ConfluenceHelper.create_or_update_page(
         body: DEPLOYMENT_PLAN_TEMPLATE,
         parent_id: deployment_plan_page["id"],
-        title: "#{title} #{version_name}",
+        title: "#{title} #{version.name}",
       )
     end
   end
 
   def deployment_plan_page
     @deployment_plan_page ||= ConfluenceHelper.create_or_update_page(
-      title: "Deployment Plans #{version_name}",
+      title: "Deployment Plans #{version.name}",
       parent_id: main_page["id"]
     )
-  end
-
-  private
-
-  def version_name
-    "v#{version.name}"
   end
 end
