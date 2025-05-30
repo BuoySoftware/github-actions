@@ -11,20 +11,21 @@ class PullRequest
       OctokitHelper.client.commit_pulls(OctokitHelper.repository.id, commit.sha)
     end.uniq(&:number).map do |pr_data|
       new(
+        body: pr_data.body,
+        html_url: pr_data.html_url,
         number: pr_data.number,
         title: pr_data.title,
-        body: pr_data.body,
       )
     end
   end
 
-  def initialize(body:, number:, title:)
+  def initialize(body:, html_url:, number:, title:)
     @body = body
     @number = number
     @title = title
   end
 
-  attr_reader :body, :number, :title
+  attr_reader :body, :html_url, :number, :title
 
   def asana_links
     @asana_links ||= [

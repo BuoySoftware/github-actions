@@ -34,7 +34,7 @@ class JiraReleaseCard
     <<~MARKDOWN
     h1. #{release.version.name}
 
-    *Github Compare: * [#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]
+    *Github Compare:* [#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]
 
     h2. Issues By Project
 
@@ -43,6 +43,17 @@ class JiraReleaseCard
         h3. #{group[:project]}
         #{group[:tickets].map do |ticket|
           " - #{ticket}"
+        end.join("\n")}
+      MARKDOWN
+    end.join("\n\n")}
+
+    h2. Pull Requests
+
+    #{pull_requests_by_group.map do |group|
+      <<~MARKDOWN
+        h3. #{group[:group]}
+        #{group[:pull_requests].map do |pr|
+          " - [##{pr.number}: #{pr.title}|#{pr.html_url}]"
         end.join("\n")}
       MARKDOWN
     end.join("\n\n")}
@@ -59,5 +70,36 @@ class JiraReleaseCard
         end.map(&:jira_tickets).flatten.uniq,
       }
     end
+  end
+
+  def pull_requests_by_group
+    associated_pull_requests = []
+    unassociated_pull_requests = []
+    dependency_pull_requests = []
+
+    release.compare.pull_requests.each do |pr|
+      if pr.asana_links.any? || pr.jira_tickets.any?
+        associated_pull_requests << pr
+      elsif pr.title.match?(/^Bump/i)
+        dependency_pull_requests << pr
+      else
+        unassociated_pull_requests << pr
+      end
+    end
+
+    [
+      {
+        group: "Associated",
+        pull_requests: associated_pull_requests,
+      },
+      {
+        group: "Unassociated",
+        pull_requests: unassociated_pull_requests,
+      },
+      {
+        group: "Dependencies",
+        pull_requests: dependency_pull_requests,
+      }
+    ]
   end
 end
