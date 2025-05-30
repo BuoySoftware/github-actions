@@ -1,7 +1,8 @@
 require_relative "compare"
 require_relative "jira_version"
-require_relative "version"
+require_relative "release_log"
 require_relative "release_note"
+require_relative "version"
 
 class Release
   def self.prepare(base_ref:, head_ref:)
@@ -16,53 +17,13 @@ class Release
     @jira_projects = compare.jira_projects
   end
 
-  attr_reader :compare, :environment_feature_flags, :jira_projects, :pull_requests, :version
+  attr_reader :compare, :environment_feature_flags, :jira_projects, :jira_versions,
+    :pull_requests, :release_note, :version
 
   def prepare
-    jira_versions = create_jira_versions
-    release_note = ReleaseNote.find_or_create(version)
-
-    puts "Version: #{version.name}"
-
-    puts "Pull Requests:"
-    compare.pull_requests.each do |pr|
-      puts "- ##{pr.number}: #{pr.title}"
-      puts "  - Asana Links:"
-      pr.asana_links.each do |link|
-        puts "    - #{link}"
-      end
-      puts "  - Jira Tickets:"
-      pr.jira_tickets.each do |ticket|
-        puts "    - #{ticket}"
-      end
-    end
-
-    puts "Feature Flags:"
-    compare.environment_feature_flags.each do |feature|
-      puts "  - #{feature}"
-    end
-
-    puts "Jira Projects:"
-    jira_projects.each do |jira_project|
-      puts "  - #{jira_project}"
-    end
-
-    puts "Jira Versions:"
-    jira_versions.each do |jira_version|
-      puts "  - #{jira_version.url}"
-    end
-
-    puts "Release Notes:"
-    puts "Main Page:"
-    puts "  - #{release_note.main_page["title"]}: #{release_note.main_page.dig("_links", "base")}#{release_note.main_page.dig("_links", "webui")}"
-    puts "Technical Notes:"
-    release_note.technical_notes.each do |technical_note|
-      puts "  - #{technical_note["title"]}: #{technical_note.dig("_links", "base")}#{technical_note.dig("_links", "webui")}"
-    end
-    puts "Deployment Plans:"
-    release_note.deployment_plans.each do |deployment_plan|
-      puts "  - #{deployment_plan["title"]}: #{deployment_plan.dig("_links", "base")}#{deployment_plan.dig("_links", "webui")}"
-    end
+    create_jira_versions
+    create_release_note
+    ReleaseLog.put(release: self)
   end
 
   private
@@ -81,5 +42,9 @@ class Release
     compare.pull_requests.flat_map do |pr|
       pr.jira_tickets.select { |ticket| ticket.start_with?(jira_project_name) }
     end.uniq
+  end
+
+  def create_release_note
+    @release_note ||= ReleaseNote.find_or_create(version)
   end
 end
