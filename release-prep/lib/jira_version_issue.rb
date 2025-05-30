@@ -11,10 +11,11 @@ class JiraVersionIssue
   attr_reader :jira_version, :ticket_name
 
   def find_or_create
+    puts "Processing #{ticket_name} for #{jira_version.name}..."
     issue = JiraHelper.client.Issue.find(ticket_name)
     existing_fix_versions = issue.fields["fixVersions"] || []
       if existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
-        puts "#{ticket_name} already added to #{version_name}."
+        puts " - #{ticket_name} already added to #{jira_version.name}."
       else
         issue.save({
           "fields" => {
@@ -23,7 +24,7 @@ class JiraVersionIssue
             } + [{ "id" => jira_version.attrs["id"] }],
           },
         })
-        puts "Added #{ticket_name} to #{version_name}"
+        puts " - Added #{ticket_name} to #{jira_version.name}"
       end
   end
 

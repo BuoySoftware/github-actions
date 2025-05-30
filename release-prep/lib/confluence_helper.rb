@@ -23,12 +23,16 @@ class ConfluenceHelper
   end
 
   def self.create_or_update_page(title:, body: "", parent_id: nil)
+    puts "Processing Confluence Page: #{title}..."
     page = pages_by_title(title:)["results"].first
 
     if page
       current_page_version = page.dig("version", "number")
-      update_page(body:, page_id: page["id"], page_version: current_page_version + 1, title:)
+      next_version = current_page_version + 1
+      puts " - Updating #{title} (v#{next_version})"
+      update_page(body:, page_id: page["id"], page_version: next_version, title:)
     else
+      puts " - Creating #{title} (v1)"
       create_page(body:, parent_id:, title:)
     end
   end

@@ -5,9 +5,9 @@ class PullRequest
   ASANA_LINK_REGEX = %r{https?://app\.asana\.com/\d+/\d+/project/\d+/task/\d+}.freeze
   JIRA_TICKET_REGEX = %r{[A-Z]+-\d+}.freeze
 
-  def self.detect(compare:)
-    compare.commits.flat_map.with_index do |commit, index|
-      puts "Processing commit #{index + 1} of #{compare.commits.size}: #{commit.sha}"
+  def self.detect(commits:)
+    commits.flat_map.with_index do |commit, index|
+      puts "Processing commit #{index + 1} of #{commits.size}: #{commit.sha}"
       OctokitHelper.client.commit_pulls(OctokitHelper.repository.id, commit.sha)
     end.uniq(&:number).map do |pr_data|
       new(

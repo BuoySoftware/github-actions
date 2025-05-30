@@ -9,16 +9,20 @@ class Release
   end
 
   def initialize(base_ref:, head_ref:)
-    @base_ref = base_ref
-    @head_ref = head_ref
+    @compare = Compare.new(base_ref:, head_ref:)
+    @version = Version.new(ref: head_ref)
+    @pull_requests = compare.pull_requests
+    @environment_feature_flags = compare.environment_feature_flags
+    @jira_projects = compare.jira_projects
   end
 
-  attr_reader :base_ref, :head_ref
+  attr_reader :compare, :environment_feature_flags, :jira_projects, :pull_requests, :version
 
   def prepare
-    puts "Version: #{version.name}"
+    jira_versions = create_jira_versions
+    release_note = ReleaseNote.find_or_create(version)
 
-    puts "Analyzing changes between #{compare.base_ref} and #{compare.head_ref}"
+    puts "Version: #{version.name}"
 
     puts "Pull Requests:"
     compare.pull_requests.each do |pr|
@@ -49,7 +53,6 @@ class Release
     end
 
     puts "Release Notes:"
-    release_note = ReleaseNote.find_or_create(version)
     puts "Main Page:"
     puts "  - #{release_note.main_page["title"]}: #{release_note.main_page.dig("_links", "base")}#{release_note.main_page.dig("_links", "webui")}"
     puts "Technical Notes:"
@@ -64,19 +67,7 @@ class Release
 
   private
 
-  def version
-    @version ||= Version.from_ref(compare.head_ref)
-  end
-
-  def compare
-    @compare ||= Compare.new(base_ref: base_ref, head_ref: head_ref)
-  end
-
-  def jira_projects
-    @jira_projects ||= compare.pull_requests.flat_map(&:jira_projects).uniq
-  end
-
-  def jira_versions
+  def create_jira_versions
     @jira_versions ||= jira_projects.map do |jira_project_name|
       JiraVersion.find_or_create(
         jira_project_name:,

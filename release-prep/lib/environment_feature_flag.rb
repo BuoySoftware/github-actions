@@ -3,6 +3,7 @@ class EnvironmentFeatureFlag
   UNDERSCORE_REGEX = %r{(?<=[a-z])(?=[A-Z])|::}.freeze
 
   def self.detect(changes:)
+    puts "Detecting environment feature flag usages..."
     new(changes:).detect
   end
 

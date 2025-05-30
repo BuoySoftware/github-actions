@@ -15,7 +15,7 @@ class JiraVersion
   attr_reader :jira_project_name, :jira_version, :tickets, :version
 
   def find_or_create
-    puts "Adding #{tickets.count} tickets to #{version.name}"
+    puts "Processing #{tickets.count} tickets for #{name}..."
     tickets.each do |ticket|
       JiraVersionIssue.find_or_create(jira_version:, ticket_name: ticket)
     end
@@ -27,14 +27,19 @@ class JiraVersion
     "#{ENV.fetch('ATLASSIAN_URL')}/projects/#{jira_project_name}/versions/#{jira_version.attrs["id"]}"
   end
 
+  def name
+    "#{jira_project_name} #{version.name}"
+  end
+
   private
 
   def find_or_create_jira_version
+    puts "Processing Jira Project: #{name}:"
     if existing_version
-      puts "#{version.name} already exists in project #{jira_project_name}"
+      puts "  - #{name} already exists"
       existing_version
     else
-      puts "Creating #{version.name} in project #{jira_project_name}"
+      puts "  - Creating #{name}"
       create_version
     end
   end
