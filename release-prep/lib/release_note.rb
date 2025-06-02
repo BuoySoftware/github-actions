@@ -79,12 +79,12 @@ class ReleaseNote
   end
 
   def main_page
-    @main_page ||= ConfluenceHelper.create_or_update_page(title: version.name)
+    @main_page ||= ConfluenceHelper.find_or_create_page(title: version.name)
   end
 
   def technical_notes
     @technical_notes ||= TECHNICAL_NOTE_TITLES.map do |title|
-      ConfluenceHelper.create_or_update_page(
+      ConfluenceHelper.find_or_create_page(
         body: TECHNICAL_NOTE_TEMPLATE,
         parent_id: technical_note_page["id"],
         title: "#{title} #{version.name}",
@@ -93,7 +93,7 @@ class ReleaseNote
   end
 
   def technical_note_page
-    @technical_note_page ||= ConfluenceHelper.create_or_update_page(
+    @technical_note_page ||= ConfluenceHelper.find_or_create_page(
       title: "Technical Notes #{version.name}",
       parent_id: main_page["id"]
     )
@@ -101,7 +101,7 @@ class ReleaseNote
 
   def deployment_plans
     @deloyment_plans ||= DEPLOYMENT_PLAN_TITLES.map do |title|
-      ConfluenceHelper.create_or_update_page(
+      ConfluenceHelper.find_or_create_page(
         body: DEPLOYMENT_PLAN_TEMPLATE,
         parent_id: deployment_plan_page["id"],
         title: "#{title} #{version.name}",
@@ -110,7 +110,7 @@ class ReleaseNote
   end
 
   def deployment_plan_page
-    @deployment_plan_page ||= ConfluenceHelper.create_or_update_page(
+    @deployment_plan_page ||= ConfluenceHelper.find_or_create_page(
       title: "Deployment Plans #{version.name}",
       parent_id: main_page["id"]
     )

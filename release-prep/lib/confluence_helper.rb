@@ -22,17 +22,15 @@ class ConfluenceHelper
     @api_token ||= ENV.fetch("ATLASSIAN_API_TOKEN")
   end
 
-  def self.create_or_update_page(title:, body: "", parent_id: nil)
+  def self.find_or_create_page(title:, body: "", parent_id: nil)
     puts "Processing Confluence Page: #{title}..."
     page = pages_by_title(title:)["results"].first
 
     if page
-      current_page_version = page.dig("version", "number")
-      next_version = current_page_version + 1
-      puts " - Updating #{title} (v#{next_version})"
-      update_page(body:, page_id: page["id"], page_version: next_version, title:)
+      puts " - Page Found: #{title}"
+      page
     else
-      puts " - Creating #{title} (v1)"
+      puts " - Creating Page: #{title}"
       create_page(body:, parent_id:, title:)
     end
   end
@@ -59,26 +57,6 @@ class ConfluenceHelper
     handle_response(response)
   end
 
-  def self.update_page(page_id:, body:, page_version:, title:)
-    payload = {
-      body: {
-        storage: {
-          value: body,
-          representation: "storage"
-        }
-      },
-      title: title,
-      type: "page",
-      version: { number: page_version },
-    }
-
-    response = client.put("/wiki/rest/api/content/#{page_id}") do |req|
-      req.body = payload.to_json
-    end
-
-    handle_response(response)
-  end
-
   def self.pages_by_title(title:)
     params = {
       title: title,
@@ -89,6 +67,10 @@ class ConfluenceHelper
 
     response = client.get("/wiki/rest/api/content") { |req| req.params = params }
     handle_response(response)
+  end
+
+  def self.web_url(webui:)
+    "#{base_url}/wiki#{webui}"
   end
 
   private

@@ -82,7 +82,7 @@ class JiraReleaseCard
   end
 
   def release_note_link
-    "#{release.release_note.main_page.dig("_links", "base")}#{release.release_note.main_page.dig("_links", "webui")}"
+    ConfluenceHelper.web_url(webui: release.release_note.main_page.dig("_links", "webui"))
   end
 
   def issues_by_project
