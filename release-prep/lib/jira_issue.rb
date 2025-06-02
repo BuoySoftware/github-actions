@@ -27,6 +27,10 @@ class JiraIssue
   end
 
   def fix_version_exists?(jira_version)
-    jira_issue.fields["fixVersions"].any? { |fv| fv["id"] == jira_version.attrs["id"] }
+    existing_fix_versions.any? { |fv| fv["id"] == jira_version.attrs["id"] }
+  end
+
+  def existing_fix_versions
+    jira_issue.fields["fixVersions"]
   end
 end
