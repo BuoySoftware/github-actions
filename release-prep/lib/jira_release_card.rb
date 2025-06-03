@@ -113,7 +113,7 @@ class JiraReleaseCard
 
   def project_versions
     release.jira_versions.map do |jira_version|
-      "[#{jira_version.jira_project_name}|#{jira_version.url}]"
+      "[#{jira_version.name}|#{jira_version.url}]"
     end.join("\n")
   end
 

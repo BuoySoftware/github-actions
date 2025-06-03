@@ -1,5 +1,5 @@
 require "asana"
-require_relative "jira_helper"
+require_relative "./jira/issue"
 
 class AsanaReleaseCard
   def self.create(release:)
@@ -45,7 +45,7 @@ class AsanaReleaseCard
       end.join
 
       <<~HTML
-        <li><a href="#{jira_issue_url(jira_issue)}">#{jira_issue.summary}</a><ol>#{pr_links}</ol></li>
+        <li><a href="#{jira_issue.url}">#{jira_issue.summary}</a><ol>#{pr_links}</ol></li>
       HTML
     end.join
 
@@ -122,12 +122,8 @@ class AsanaReleaseCard
 
   def jira_pr_link_map
     release.pull_requests.map(&:jira_tickets).flatten.uniq.map do |jira_ticket|
-      [JiraHelper.client.Issue.find(jira_ticket), release.pull_requests.select { |pr| pr.jira_tickets.include?(jira_ticket) }]
+      [Jira::Issue.find(jira_ticket), release.pull_requests.select { |pr| pr.jira_tickets.include?(jira_ticket) }]
     end
-  end
-
-  def jira_issue_url(jira_issue)
-    "#{ENV.fetch("ATLASSIAN_URL")}/browse/#{jira_issue.key}"
   end
 
   def dependency_prs

@@ -1,9 +1,15 @@
+require_relative "./client"
+
 module Jira
   class Project < SimpleDelegator
     def self.find(project_name)
       target = Client.instance.Project.find(project_name)
 
       new(target)
+    end
+
+    def find_or_create_version(name)
+      find_version(name) || create_version(name:)
     end
 
     def find_version(name)

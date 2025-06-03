@@ -42,6 +42,10 @@ module Jira
       attrs["key"]
     end
 
+    def url
+      "#{ENV.fetch("ATLASSIAN_URL")}/browse/#{key}"
+    end
+
     private
 
     def existing_fix_versions

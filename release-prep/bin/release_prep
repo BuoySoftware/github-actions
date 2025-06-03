@@ -12,6 +12,7 @@ rescue EnvironmentValidator::EnvironmentError => e
   puts "Error: #{e.message}"
   exit 1
 rescue StandardError => e
-  puts "Error: #{e.message}"
+  puts "Error on line #{e.backtrace_locations.first.lineno}: #{e.message}"
+  puts e.backtrace
   exit 1
 end

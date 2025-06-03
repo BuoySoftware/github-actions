@@ -1,7 +1,7 @@
-require_relative "compare"
-require_relative "jira_release_card"
 require_relative "asana_release_card"
-require_relative "jira_version"
+require_relative "compare"
+require_relative "jira/project"
+require_relative "jira_release_card"
 require_relative "release_log"
 require_relative "release_notes/deployment_plan"
 require_relative "release_notes/release_note"
@@ -32,12 +32,10 @@ class Release
     @version = Version.new(ref: head_ref)
     @pull_requests = compare.pull_requests
     @environment_feature_flags = compare.environment_feature_flags
-    @jira_projects = compare.jira_projects
   end
 
   attr_reader :compare, :environment_feature_flags, :deployment_plans,
-    :jira_projects, :jira_versions, :pull_requests, :release_note,
-    :technical_notes, :version
+    :jira_versions, :pull_requests, :release_note, :technical_notes, :version
 
   def prepare
     create_jira_versions
@@ -47,21 +45,30 @@ class Release
     ReleaseLog.put(release: self)
   end
 
-  private
-
-  def create_jira_versions
-    @jira_versions ||= jira_projects.map do |jira_project_name|
-      JiraVersion.find_or_create(
-        jira_project_name:,
-        tickets: jira_tickets_by_project(jira_project_name),
-        version:
-      )
+  def jira_projects
+    @jira_projects ||= compare.jira_projects.map do |project_name|
+      Jira::Project.find(project_name)
     end
   end
 
-  def jira_tickets_by_project(jira_project_name)
+  private
+
+  def create_jira_versions
+    @jira_versions ||= jira_projects.map do |jira_project|
+      jira_version = jira_project.find_or_create_version(version.name)
+      issues = jira_keys_by_project(jira_project).map do |key|
+        Jira::Issue.find(key)
+      end
+      issues.each do |issue|
+       issue.add_to_version(jira_version)
+      end
+      jira_version
+    end
+  end
+
+  def jira_keys_by_project(jira_project)
     compare.pull_requests.flat_map do |pr|
-      pr.jira_tickets.select { |ticket| ticket.start_with?(jira_project_name) }
+      pr.jira_tickets.select { |ticket| ticket.start_with?(jira_project.name) }
     end.uniq
   end
 
