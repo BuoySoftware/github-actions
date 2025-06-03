@@ -1,4 +1,5 @@
 require "asana"
+require_relative "jira_helper"
 
 class AsanaReleaseCard
   def self.create(release:)
@@ -36,6 +37,18 @@ class AsanaReleaseCard
       HTML
     end.join
 
+    jira_pr_link_list_items = jira_pr_link_map.map do |jira_issue, prs|
+      pr_links = prs.map do |pr|
+        <<~HTML
+          <li><a href="#{pr.html_url}">#{ERB::Util.html_escape(pr.title)}</a></li>
+        HTML
+      end.join
+
+      <<~HTML
+        <li><a href="#{jira_issue_url(jira_issue)}">#{jira_issue.summary}</a><ol>#{pr_links}</ol></li>
+      HTML
+    end.join
+
     dependency_pr_list_items = dependency_prs.map do |pr|
       <<~HTML
         <li><a href="#{pr.html_url}">#{ERB::Util.html_escape(pr.title)}</a></li>
@@ -59,8 +72,11 @@ class AsanaReleaseCard
           </tr>
           #{feature_rows}
         </table>
-        <strong>In this release:</strong>
+        <strong>PRs with Asana tasks:</strong>
         <ol>#{asana_pr_link_list_items}</ol>
+
+        <strong>PRs with Jira issues:</strong>
+        <ol>#{jira_pr_link_list_items}</ol>
 
         <strong>PRs without Asana tasks:</strong>
         <ol>#{flagged_pr_list_items}</ol>
@@ -102,6 +118,16 @@ class AsanaReleaseCard
     release.pull_requests.map(&:asana_links).flatten.uniq.map do |asana_link|
       [asana_link, release.pull_requests.select { |pr| pr.asana_links.include?(asana_link) }]
     end
+  end
+
+  def jira_pr_link_map
+    release.pull_requests.map(&:jira_tickets).flatten.uniq.map do |jira_ticket|
+      [JiraHelper.client.Issue.find(jira_ticket), release.pull_requests.select { |pr| pr.jira_tickets.include?(jira_ticket) }]
+    end
+  end
+
+  def jira_issue_url(jira_issue)
+    "#{ENV.fetch("ATLASSIAN_URL")}/browse/#{jira_issue.key}"
   end
 
   def dependency_prs
