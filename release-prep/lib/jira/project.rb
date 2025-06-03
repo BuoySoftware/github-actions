@@ -1,0 +1,26 @@
+module Jira
+  class Project < SimpleDelegator
+    def self.find(project_name)
+      target = Client.instance.Project.find(project_name)
+
+      new(target)
+    end
+
+    def find_version(name)
+      versions.find { |v| v.name == name }
+    end
+
+    def create_version(name:)
+      version = Client.instance.Version.build
+      version.save!(
+        'archived' => false,
+        'description' => "Release version #{name}",
+        'name' => name,
+        'projectId' => id,
+        'released' => false
+      )
+      version.fetch
+      version
+    end
+  end
+end

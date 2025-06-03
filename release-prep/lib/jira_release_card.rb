@@ -1,6 +1,8 @@
+require_relative "./jira/issue"
+
 class JiraReleaseCard
-  def self.create(release:)
-    new(release:).create
+  def self.create_or_update(release:)
+    new(release:).create_or_update
   end
 
   def initialize(release:)
@@ -9,9 +11,25 @@ class JiraReleaseCard
 
   attr_reader :release
 
-  def create
-    issue = JiraHelper.client.Issue.build
-    payload = {
+  def create_or_update
+    if existing_release_card
+      puts "Release card found: #{existing_release_card.attrs["key"]}"
+      existing_release_card.save(payload)
+      existing_release_card
+    else
+      puts "Creating release card: #{summary}"
+      Jira::Issue.create(payload)
+    end
+  end
+
+  private
+
+  def existing_release_card
+    @existing_release_card ||= Jira::Issue.find_by_summary(summary)
+  end
+
+  def payload
+    {
       "fields" => {
         "project" => { "key" => "VERSIONS" },
         "summary" => summary,
@@ -22,10 +40,7 @@ class JiraReleaseCard
         "customfield_10363" => release_note_link
       },
     }
-    issue.save!(payload)
   end
-
-  private
 
   def summary
     "#{ENV.fetch("GITHUB_REPO")} #{release.version.name}"

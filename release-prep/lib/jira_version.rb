@@ -1,4 +1,5 @@
-require_relative "jira_issue"
+require_relative "./jira/issue"
+require_relative "./jira/project"
 
 class JiraVersion
   def self.find_or_create(jira_project_name:, tickets:, version:)
@@ -17,7 +18,7 @@ class JiraVersion
   def find_or_create
     puts "Processing #{tickets.count} tickets for #{name}..."
     tickets.each do |ticket|
-      JiraIssue.new(ticket:).add_to_jira_version(jira_version:)
+      Jira::Issue.find(ticket).add_to_version(jira_version)
     end
 
     self
@@ -45,23 +46,14 @@ class JiraVersion
   end
 
   def jira_project
-    @jira_project ||= JiraHelper.client.Project.find(jira_project_name)
+    @jira_project ||= Jira::Project.find(jira_project_name)
   end
 
   def existing_version
-    @existing_version ||= jira_project.versions.find { |v| v.name == version.name }
+    @existing_versino ||= jira_project.find_version(version.name)
   end
 
   def create_version
-    jira_version = JiraHelper.client.Version.build
-    jira_version.save!(
-      'archived' => false,
-      'description' => "Release version #{version.name}",
-      'name' => version.name,
-      'projectId' => jira_project.id,
-      'released' => false
-    )
-    jira_version.fetch
-    jira_version
+    @jira_version ||= jira_project.create_version(name: version.name)
   end
 end

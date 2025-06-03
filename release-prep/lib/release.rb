@@ -92,7 +92,7 @@ class Release
   end
 
   def create_jira_release_card
-    @jira_release_card ||= JiraReleaseCard.create(release: self)
+    @jira_release_card ||= JiraReleaseCard.create_or_update(release: self)
   end
 
   def create_asana_release_card
