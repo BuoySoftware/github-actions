@@ -95,7 +95,7 @@ class AsanaReleaseCard
           section: ENV.fetch("ASANA_SECTION_ID"),
         },
       ],
-      name: "Wharf #{release.version.name}",
+      name: "#{ENV.fetch("GITHUB_REPO")} #{release.version.name}",
       html_notes: asana_task_html_notes
     )
 
