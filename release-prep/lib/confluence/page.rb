@@ -24,6 +24,10 @@ module Confluence
       super(params)
     end
 
+    def id
+      json["id"]
+    end
+
     def title
       json["title"]
     end

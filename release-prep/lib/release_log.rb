@@ -45,14 +45,14 @@ class ReleaseLog
 
       Release Notes:
       Main Page:
-        - #{ConfluenceHelper.web_url(webui: release.release_note.main_page.dig("_links", "webui"))}"
+        - #{release.release_note.url}"
       Technical Notes:
-      #{release.release_note.technical_notes.map do |note|
-        "  - #{ConfluenceHelper.web_url(webui: note.dig("_links", "webui"))}"
+      #{release.technical_notes.map do |note|
+        "  - #{note.url}"
       end.join("\n")}
       Deployment Plans:
-      #{release.release_note.deployment_plans.map do |plan|
-        "  - #{ConfluenceHelper.web_url(webui: plan.dig("_links", "webui"))}"
+      #{release.deployment_plans.map do |plan|
+        "  - #{plan.url}"
       end.join("\n")}
     OUTPUT
   end
