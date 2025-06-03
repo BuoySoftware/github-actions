@@ -1,7 +1,7 @@
 require_relative "jira_helper"
 
 class Version
-  VERSION_REGEX = /^v(\d+\.\d+)(?:-rc\.\d+)?$/
+  VERSION_REGEX = /^v(\d+\.\d+)(?:-rc\.?\d+)?$/
 
   def initialize(ref:)
     @ref = ref
