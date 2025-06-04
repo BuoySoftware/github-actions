@@ -1,6 +1,10 @@
 require_relative "./jira/issue"
 
 class JiraReleaseCard
+  ASANA_LEGACY_LINK_REGEX = %r{https?://app\.asana\.com/\d+/\d+/\d+}.freeze
+  ASANA_LINK_REGEX = %r{https?://app\.asana\.com/\d+/\d+/project/\d+/task/\d+}.freeze
+  JIRA_TICKET_REGEX = %r{[A-Z]+-\d+}.freeze
+
   def self.create_or_update(release:)
     new(release:).create_or_update
   end
@@ -37,7 +41,7 @@ class JiraReleaseCard
         "description" => description,
         "customfield_10298" => release.version.number,
         "customfield_10297" => { "value" => ENV.fetch("GITHUB_REPO") },
-        "customfield_10363" => release_note_link
+        "customfield_10363" => release.jira_assets.release_note.url
       },
     }
   end
@@ -50,21 +54,23 @@ class JiraReleaseCard
     <<~MARKDOWN
     h1. #{summary}
 
-    ||Version||#{release.version.number}|
-    ||Base Ref||#{release.compare.base_ref}|
-    ||Head Ref||#{release.compare.head_ref}|
-    ||Github Compare||[#{release.compare.base_ref}...#{release.compare.head_ref}|#{release.compare.github_url}]|
+    ||Version||#{release.version.name}|
+    ||Base Ref||#{release.github_assets.base_ref}|
+    ||Head Ref||#{release.github_assets.head_ref}|
+    ||Github Compare||[#{release.github_assets.base_ref}...#{release.github_assets.head_ref}|#{release.github_assets.compare_url}]|
     ||Project Versions||#{project_versions}|
 
     ----
 
     h2. Issues By Project
 
-    #{issues_by_project.map do |group|
+    #{release.jira_assets.issues_by_project.map do |group|
+      project, issues = group.values_at(:project, :issues)
+
       <<~MARKDOWN
-        h3. #{group[:project]}
-        #{group[:tickets].map do |ticket|
-          " - #{ticket}"
+        h3. #{project.name}
+        #{issues.map do |issue|
+          " - #{issue.key}"
         end.join("\n")}
       MARKDOWN
     end.join("\n\n")}
@@ -96,53 +102,69 @@ class JiraReleaseCard
     MARKDOWN
   end
 
-  def release_note_link
-    release.release_note.url
-  end
-
-  def issues_by_project
-    release.compare.jira_projects.map do |jira_project|
-      {
-        project: jira_project,
-        tickets: release.pull_requests.select do |pr| 
-          pr.jira_projects.include?(jira_project) 
-        end.map(&:jira_tickets).flatten.uniq,
-      }
-    end
-  end
-
   def project_versions
-    release.jira_versions.map do |jira_version|
-      "[#{jira_version.name}|#{jira_version.url}]"
+    release.jira_assets.versions_by_project.map do |group|
+      project, version = group.values_at(:project, :version)
+      url = "#{ENV.fetch("ATLASSIAN_URL")}/projects/#{project.key}/versions/#{version.attrs["id"]}"
+
+      "[#{project.key}|#{url}]"
     end.join("\n")
   end
 
   def asana_tasks
-    asana_links = release.pull_requests.map(&:asana_links).flatten.uniq
+    prs_by_asana_link = release.github_assets.pull_requests.map(&:body).map do |body|
+      [
+        *body&.scan(ASANA_LINK_REGEX),
+        *body&.scan(ASANA_LEGACY_LINK_REGEX)
+      ]
+    end.flatten.uniq.map do |link|
+      { 
+        link:,
+        prs: release.github_assets.pull_requests.select { |pr| pr.body&.include?(link) },
+      }
+    end
 
-    asana_links.any? ? <<~MARKDOWN : ""
+    prs_by_asana_link.any? ? <<~MARKDOWN : ""
       ----
 
       h2. Asana Tasks
 
-      #{asana_links.map do |link|
-        " - #{link}"
+      #{prs_by_asana_link.map do |group|
+        [
+          " # #{group[:link]}",
+          *group[:prs].map { |pr| " *# [##{pr.number}: #{pr.title}|#{pr.html_url}]" }
+        ].join("\n")
       end.join("\n")}
     MARKDOWN
   end
 
   def pull_requests_by_group
     associated_pull_requests = []
-    unassociated_pull_requests = []
+    asana_pull_requests = []
     dependency_pull_requests = []
+    unassociated_pull_requests = []
 
-    release.compare.pull_requests.each do |pr|
-      if pr.asana_links.any? || pr.jira_tickets.any?
-        associated_pull_requests << pr
-      elsif pr.title.match?(/^Bump/i)
-        dependency_pull_requests << pr
+    release.github_assets.commits_by_pull_request.each do |group|
+      pull_request, commits = group.values_at(:pull_request, :commits)
+      commit_messages = commits.map(&:commit).map(&:message).join("\n")
+
+      if [
+        commit_messages.match?(JIRA_TICKET_REGEX),
+        pull_request.title.match?(JIRA_TICKET_REGEX),
+        pull_request.body&.match?(JIRA_TICKET_REGEX),
+      ].any?
+        associated_pull_requests << pull_request
+      elsif [
+        pull_request.body&.match?(ASANA_LINK_REGEX),
+        pull_request.body&.match?(ASANA_LEGACY_LINK_REGEX),
+        commit_messages.match?(ASANA_LINK_REGEX),
+        commit_messages.match?(ASANA_LEGACY_LINK_REGEX),
+      ].any?
+        asana_pull_requests << pull_request
+      elsif pull_request.user.login.match?("dependabot")
+        dependency_pull_requests << pull_request
       else
-        unassociated_pull_requests << pr
+        unassociated_pull_requests << pull_request
       end
     end
 
@@ -150,6 +172,10 @@ class JiraReleaseCard
       {
         group: "Associated",
         pull_requests: associated_pull_requests,
+      },
+      {
+        group: "Asana",
+        pull_requests: asana_pull_requests,
       },
       {
         group: "Unassociated",

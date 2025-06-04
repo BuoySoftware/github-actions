@@ -1,8 +1,8 @@
 require_relative "asana_release_card"
-require_relative "compare"
-require_relative "jira/project"
+require_relative "environment_feature_flags"
+require_relative "github_assets"
+require_relative "jira_assets"
 require_relative "jira_release_card"
-require_relative "release_log"
 require_relative "release_notes/deployment_plan"
 require_relative "release_notes/release_note"
 require_relative "release_notes/technical_note"
@@ -28,78 +28,83 @@ class Release
   end
 
   def initialize(base_ref:, head_ref:)
-    @compare = Compare.new(base_ref:, head_ref:)
     @version = Version.new(ref: head_ref)
-    @pull_requests = compare.pull_requests
-    @environment_feature_flags = compare.environment_feature_flags
+    @github_assets = GithubAssets.new(base_ref:, head_ref:)
+    @jira_assets = JiraAssets.new(github_assets:)
   end
 
-  attr_reader :compare, :environment_feature_flags, :deployment_plans,
-    :jira_versions, :pull_requests, :release_note, :technical_notes, :version
+  attr_reader :asana_release_card,
+              :github_assets,
+              :jira_assets, 
+              :version
 
   def prepare
-    create_jira_versions
-    create_release_notes
-    create_jira_release_card
+    puts "Preparing release #{version.name}..."
+    puts "findings or creating jira project versions..."
+    find_or_create_jira_project_versions
+    puts "assigning project versions to issues..."
+    assign_project_version_to_issues
+    puts "finding or creating release notes..."
+    find_or_create_release_note
+    puts "finding or creating technical notes..."
+    find_or_create_technical_notes
+    puts "finding or creating deployment plans..."
+    find_or_create_deployment_plans
+    puts "creating or updating jira release card..."
+    create_or_update_jira_release_card
+    puts "creating asana release card..."
     create_asana_release_card
-    ReleaseLog.put(release: self)
   end
 
-  def jira_projects
-    @jira_projects ||= compare.jira_projects.map do |project_name|
-      Jira::Project.find(project_name)
-    end
+  def environment_feature_flags
+    @environment_feature_flags ||= EnvironmentFeatureFlags.detect(changes: github_assets.changes)
   end
 
   private
 
-  def create_jira_versions
-    @jira_versions ||= jira_projects.map do |jira_project|
-      jira_version = jira_project.find_or_create_version(version.name)
-      issues = jira_keys_by_project(jira_project).map do |key|
-        Jira::Issue.find(key)
-      end
+  def find_or_create_jira_project_versions
+    jira_assets.project_versions ||= jira_assets.projects.map do |project|
+      project.find_or_create_version(version.name)
+    end
+  end
+
+  def assign_project_version_to_issues
+    jira_assets.versions_by_project.each do |group|
+      project, jira_version = group.values_at(:project, :version)
+      issues = jira_assets.issues_by_project.find { |group| group[:project].key == project.key }[:issues]
+
       issues.each do |issue|
-       issue.add_to_version(jira_version)
+        issue.add_to_version(jira_version)
       end
-      jira_version
     end
   end
 
-  def jira_keys_by_project(jira_project)
-    compare.pull_requests.flat_map do |pr|
-      pr.jira_tickets.select { |ticket| ticket.start_with?(jira_project.name) }
-    end.uniq
+  def find_or_create_release_note
+    jira_assets.release_note ||= ReleaseNotes::ReleaseNote.find_or_create(version:)
   end
 
-  def create_release_notes
-    @release_note ||= ReleaseNotes::ReleaseNote.find_or_create(version:)
-    create_technical_notes
-    create_deployment_plans
-  end
-
-  def create_technical_notes
-    @technical_notes ||= TECHNICAL_NOTE_TITLES.map do |title|
+  def find_or_create_technical_notes
+    jira_assets.technical_notes ||= TECHNICAL_NOTE_TITLES.map do |title|
       ReleaseNotes::TechnicalNote.find_or_create(
-        parent_id: release_note.id,
+        parent_id: jira_assets.release_note.id,
         title:,
         version:
       )
     end
   end
 
-  def create_deployment_plans
-    @deployment_plans ||= DEPLOYMENT_PLAN_TITLES.map do |title|
+  def find_or_create_deployment_plans
+    jira_assets.deployment_plans ||= DEPLOYMENT_PLAN_TITLES.map do |title|
       ReleaseNotes::DeploymentPlan.find_or_create(
-        parent_id: release_note.id,
+        parent_id: jira_assets.release_note.id,
         title:,
         version:
       )
     end
   end
 
-  def create_jira_release_card
-    @jira_release_card ||= JiraReleaseCard.create_or_update(release: self)
+  def create_or_update_jira_release_card
+    jira_assets.release_card ||= JiraReleaseCard.create_or_update(release: self)
   end
 
   def create_asana_release_card

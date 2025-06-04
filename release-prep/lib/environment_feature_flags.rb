@@ -1,4 +1,4 @@
-class EnvironmentFeatureFlag
+class EnvironmentFeatureFlags
   FEATURE_MODULE_REGEX = %r{Feature(::[\w]+)+}.freeze
   UNDERSCORE_REGEX = %r{(?<=[a-z])(?=[A-Z])|::}.freeze
 
@@ -11,8 +11,6 @@ class EnvironmentFeatureFlag
     @changes = changes
   end
 
-  attr_reader :changes
-
   def detect
     changes.compact.flatten.filter_map do |change|
       feature_module = change.match(FEATURE_MODULE_REGEX)&.to_s
@@ -24,4 +22,8 @@ class EnvironmentFeatureFlag
       end
     end.uniq
   end
+
+  private
+
+  attr_reader :changes
 end
