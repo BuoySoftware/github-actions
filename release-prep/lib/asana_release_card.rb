@@ -70,7 +70,7 @@ class AsanaReleaseCard
 
     asana_task_html_notes = <<~HTML.strip
       <body>
-      <strong>Github Compare: </strong> <a href="#{release.github_assets.compare.html_url}">#{release.github_assets.compare.base_ref}...#{release.github_assets.compare.head_ref}</a>
+      <strong>Github Compare: </strong> <a href="#{release.github_assets.compare_url}">#{release.github_assets.base_ref}...#{release.github_assets.head_ref}</a>
         <table>
           <tr>
             <td>Feature Flag</td>
