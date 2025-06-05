@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 class EnvironmentValidator
   REQUIRED_VARIABLES = %w[
     ASANA_PAT

@@ -1,10 +1,8 @@
-# frozen_string_literal: true
-
 require_relative "resource"
 
 module Confluence
   class Page < Resource
-    API_PATH = "/wiki/rest/api/content"
+    API_PATH = "/wiki/rest/api/content".freeze
 
     def self.create(body:, space_key:, title:, parent_id: nil)
       params = {

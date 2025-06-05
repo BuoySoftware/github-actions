@@ -1,10 +1,8 @@
-# frozen_string_literal: true
-
 require_relative "../confluence/page"
 
 module ReleaseNotes
   class ReleaseNote
-    TEMPLATE = ""
+    TEMPLATE = "".freeze
 
     def self.find_or_create(**)
       release_note = new(**)

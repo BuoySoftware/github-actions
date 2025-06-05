@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 class EnvironmentFeatureFlags
   FEATURE_MODULE_REGEX = /Feature(::[\w]+)+/
   UNDERSCORE_REGEX = /(?<=[a-z])(?=[A-Z])|::/

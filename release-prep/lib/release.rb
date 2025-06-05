@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require_relative "asana_release_card"
 require_relative "environment_feature_flags"
 require_relative "github_assets"

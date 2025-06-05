@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require "asana"
 require_relative "jira/issue"
 

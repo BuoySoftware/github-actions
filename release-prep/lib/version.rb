@@ -1,8 +1,6 @@
-# frozen_string_literal: true
-
 class Version
   VERSION_REGEX = /^v(\d+\.\d+)(?:-rc\.?\d+)?$/
-  ERROR_MESSAGE = "Invalid version format. Expected format: vX.Y or vX.Y-rc.N"
+  ERROR_MESSAGE = "Invalid version format. Expected format: vX.Y or vX.Y-rc.N".freeze
 
   def initialize(ref:)
     @ref = ref

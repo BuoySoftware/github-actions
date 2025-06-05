@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require_relative "jira/issue"
 require_relative "jira/project"
 
