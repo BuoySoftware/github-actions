@@ -1,8 +1,10 @@
-require_relative "./release_note"
+# frozen_string_literal: true
+
+require_relative "release_note"
 
 module ReleaseNotes
   class TechnicalNote < ReleaseNote
-    TEMPLATE = <<~HTML.freeze
+    TEMPLATE = <<~HTML
       <div>
         <h1>🆕 What's New</h1>
         <ul>

@@ -1,4 +1,6 @@
-require_relative "./client"
+# frozen_string_literal: true
+
+require_relative "client"
 
 module Jira
   class Project < SimpleDelegator
@@ -13,17 +15,17 @@ module Jira
     end
 
     def find_version(name)
-      versions.find { |v| v.name == name }
+      versions.detect { |v| v.name == name }
     end
 
     def create_version(name:)
       version = Client.instance.Version.build
       version.save!(
-        'archived' => false,
-        'description' => "Release version #{name}",
-        'name' => name,
-        'projectId' => id,
-        'released' => false
+        "archived" => false,
+        "description" => "Release version #{name}",
+        "name" => name,
+        "projectId" => id,
+        "released" => false
       )
       version.fetch
       version

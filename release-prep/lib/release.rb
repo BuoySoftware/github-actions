@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative "asana_release_card"
 require_relative "environment_feature_flags"
 require_relative "github_assets"
@@ -34,9 +36,9 @@ class Release
   end
 
   attr_reader :asana_release_card,
-              :github_assets,
-              :jira_assets, 
-              :version
+    :github_assets,
+    :jira_assets,
+    :version
 
   def prepare
     puts "Preparing release #{version.name}..."
@@ -71,7 +73,9 @@ class Release
   def assign_project_version_to_issues
     jira_assets.versions_by_project.each do |group|
       project, jira_version = group.values_at(:project, :version)
-      issues = jira_assets.issues_by_project.find { |group| group[:project].key == project.key }[:issues]
+      issues = jira_assets.issues_by_project.detect { |group|
+        group[:project].key == project.key
+      }[:issues]
 
       issues.each do |issue|
         issue.add_to_version(jira_version)
@@ -108,6 +112,6 @@ class Release
   end
 
   def create_asana_release_card
-    @asana_release_card ||= AsanaReleaseCard.create(release: self)
+    @create_asana_release_card ||= AsanaReleaseCard.create(release: self)
   end
 end

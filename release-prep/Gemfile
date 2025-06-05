@@ -1,6 +1,11 @@
-source 'https://rubygems.org'
+# frozen_string_literal: true
 
-gem 'faraday', '~> 2.9' 
-gem 'jira-ruby', '~> 2.2'
-gem 'octokit', '~> 8.1'
+source "https://rubygems.org"
+source "https://rubygems.pkg.github.com/buoysoftware" do
+  gem "rubocop-buoy"
+end
+
 gem "asana", "~> 2.0"
+gem "faraday", "~> 2.9"
+gem "jira-ruby", "~> 2.2"
+gem "octokit", "~> 8.1"

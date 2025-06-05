@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 
-require_relative '../lib/cli_options'
-require_relative '../lib/environment_validator'
-require_relative '../lib/release'
+require_relative "../lib/cli_options"
+require_relative "../lib/environment_validator"
+require_relative "../lib/release"
 
 begin
   EnvironmentValidator.validate!

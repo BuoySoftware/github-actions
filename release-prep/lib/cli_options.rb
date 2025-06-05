@@ -1,4 +1,6 @@
-require 'optparse'
+# frozen_string_literal: true
+
+require "optparse"
 
 class CliOptions
   Options = Struct.new(:base_ref, :head_ref, keyword_init: true)
@@ -27,4 +29,4 @@ class CliOptions
 
     options
   end
-end 
+end

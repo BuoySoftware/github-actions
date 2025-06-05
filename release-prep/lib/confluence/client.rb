@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "faraday"
 require "json"
 require "singleton"
@@ -25,8 +27,9 @@ module Confluence
     private
 
     def connection
-      @connection ||= Faraday.new(url: "#{ENV.fetch("ATLASSIAN_URL")}") do |conn|
-        conn.request(:authorization, :basic, ENV.fetch("ATLASSIAN_EMAIL"), ENV.fetch("ATLASSIAN_API_TOKEN"))
+      @connection ||= Faraday.new(url: ENV.fetch("ATLASSIAN_URL").to_s) do |conn|
+        conn.request(:authorization, :basic, ENV.fetch("ATLASSIAN_EMAIL"),
+          ENV.fetch("ATLASSIAN_API_TOKEN"))
         conn.headers["Content-Type"] = "application/json"
         conn.headers["Accept"] = "application/json"
       end

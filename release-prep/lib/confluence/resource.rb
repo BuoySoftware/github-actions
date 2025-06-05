@@ -1,17 +1,17 @@
+# frozen_string_literal: true
+
 require_relative "client"
 
 module Confluence
   class Resource
     def self.find_by(params)
-      json = self.where(params)
+      json = where(params)
 
       first_result = json["results"].first
 
-      if first_result
-        self.find(first_result["id"])
-      else
-        nil
-      end
+      return unless first_result
+
+      find(first_result["id"])
     end
 
     def self.where(params)

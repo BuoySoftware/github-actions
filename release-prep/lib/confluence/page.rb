@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative "resource"
 
 module Confluence
@@ -7,14 +9,14 @@ module Confluence
     def self.create(body:, space_key:, title:, parent_id: nil)
       params = {
         body: {
-        storage: {
+          storage: {
             value: body,
-            representation: "storage"
-          }
+            representation: "storage",
+          },
         },
         title: title,
-        space: { 
-          key: space_key 
+        space: {
+          key: space_key,
         },
         type: "page",
       }
@@ -33,7 +35,7 @@ module Confluence
     end
 
     def url
-      "#{json["_links"]["base"]}#{json["_links"]["webui"]}"
+      "#{json['_links']['base']}#{json['_links']['webui']}"
     end
   end
 end

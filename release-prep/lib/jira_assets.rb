@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require_relative "jira/issue"
 require_relative "jira/project"
 
 class JiraAssets
-  ISSUE_KEY_REGEX = %r{[A-Z]+-\d+}.freeze
+  ISSUE_KEY_REGEX = /[A-Z]+-\d+/
 
   attr_accessor(
     :deployment_plans,
@@ -26,7 +28,7 @@ class JiraAssets
     @issues_by_project ||= projects.map do |project|
       {
         project:,
-        issues: issues.select { |issue| issue.project.key == project.key }
+        issues: issues.select { |issue| issue.project.key == project.key },
       }
     end
   end
@@ -44,9 +46,9 @@ class JiraAssets
     @versions_by_project ||= projects.map do |project|
       {
         project:,
-        version: project_versions.find do |project_version|
+        version: project_versions.detect do |project_version|
           project_version.attrs["projectId"].to_s == project.id
-        end
+        end,
       }
     end
   end

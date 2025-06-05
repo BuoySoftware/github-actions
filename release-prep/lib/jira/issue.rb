@@ -1,4 +1,6 @@
-require_relative "./client"
+# frozen_string_literal: true
+
+require_relative "client"
 
 module Jira
   class Issue < SimpleDelegator
@@ -21,19 +23,17 @@ module Jira
         "summary ~ \"#{summary}\" ORDER BY created DESC"
       )
 
-      if targets.any?
-        new(targets.first)
-      else
-        nil
-      end
+      return unless targets.any?
+
+      new(targets.first)
     end
 
     def add_to_version(version)
       save({
         "fields" => {
-          "fixVersions" => existing_fix_versions.map { |fv|
+          "fixVersions" => existing_fix_versions.map do |fv|
             { "id" => fv["id"] }
-          } + [{ "id" => version.attrs["id"] }],
+          end + [{ "id" => version.attrs["id"] }],
         },
       })
     end
@@ -43,7 +43,7 @@ module Jira
     end
 
     def url
-      "#{ENV.fetch("ATLASSIAN_URL")}/browse/#{key}"
+      "#{ENV.fetch('ATLASSIAN_URL')}/browse/#{key}"
     end
 
     private

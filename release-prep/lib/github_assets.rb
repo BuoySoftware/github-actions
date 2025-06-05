@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "octokit"
 
 class GithubAssets
@@ -47,7 +49,7 @@ class GithubAssets
     @commits_by_pull_request ||= pull_requests.map do |pull_request|
       {
         pull_request:,
-        commits: client.pull_request_commits(repository.id, pull_request.number)
+        commits: client.pull_request_commits(repository.id, pull_request.number),
       }
     end
   end

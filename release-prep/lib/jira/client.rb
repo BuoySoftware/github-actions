@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "jira-ruby"
 require "singleton"
 
@@ -7,10 +9,10 @@ module Jira
 
     def initialize
       jira_client = JIRA::Client.new(
-        username: ENV.fetch('ATLASSIAN_EMAIL'),
-        password: ENV.fetch('ATLASSIAN_API_TOKEN'),
-        site: ENV.fetch('ATLASSIAN_URL'),
-        context_path: '',
+        username: ENV.fetch("ATLASSIAN_EMAIL"),
+        password: ENV.fetch("ATLASSIAN_API_TOKEN"),
+        site: ENV.fetch("ATLASSIAN_URL"),
+        context_path: "",
         auth_type: :basic
       )
 

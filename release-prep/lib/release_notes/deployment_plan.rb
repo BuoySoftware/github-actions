@@ -1,4 +1,6 @@
-require_relative "./release_note"
+# frozen_string_literal: true
+
+require_relative "release_note"
 
 module ReleaseNotes
   class DeploymentPlan < ReleaseNote
