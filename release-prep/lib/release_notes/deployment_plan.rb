@@ -7,31 +7,63 @@ module ReleaseNotes
     def generate_template
       <<~HTML
         <div>
-          <h1>Post-Deployment Instructions</h1>
-          <table border="1" style="border-collapse: collapse; width: 100%;">
+          <h1>Pre-Deployment Instructions</h1>
+          <table>
             <thead>
               <tr>
-                <th style="padding: 8px; text-align: left;">Jira Issue</th>
-                <th style="padding: 8px; text-align: left;">Instructions</th>
+                <th>Jira Issue</th>
+                <th>Instructions</th>
               </tr>
             </thead>
             <tbody>
-              #{generate_table_rows}
+              #{generate_pre_deployment_table_rows}
+            </tbody>
+          </table>
+        </div>
+        <hr />
+        <div>
+          <h1>Post-Deployment Instructions</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Jira Issue</th>
+                <th>Instructions</th>
+              </tr>
+            </thead>
+            <tbody>
+              #{generate_post_deployment_table_rows}
             </tbody>
           </table>
         </div>
       HTML
     end
 
-    def generate_table_rows
-      issues_with_post_deployment_instructions.map do |issue|
+    def generate_pre_deployment_table_rows
+      issues_with_pre_deployment_instructions.map do |issue|
         <<~HTML.strip
           <tr>
-            <td style="padding: 8px; border: 1px solid #ddd;"><a href="#{issue.url}">#{issue.key}</a></td>
-            <td style="padding: 8px; border: 1px solid #ddd;">#{issue.post_deployment_instructions}</td>
+            <td><a href="#{issue.url}">#{issue.key}</a></td>
+            <td>#{issue.pre_deployment_instructions}</td>
           </tr>
         HTML
       end.join("\n")
+    end
+
+    def generate_post_deployment_table_rows
+      issues_with_post_deployment_instructions.map do |issue|
+        <<~HTML.strip
+          <tr>
+            <td><a href="#{issue.url}">#{issue.key}</a></td>
+            <td>#{issue.post_deployment_instructions}</td>
+          </tr>
+        HTML
+      end.join("\n")
+    end
+
+    def issues_with_pre_deployment_instructions
+      return [] unless jira_assets&.issues
+
+      jira_assets.issues.select(&:pre_deployment_instructions)
     end
 
     def issues_with_post_deployment_instructions
