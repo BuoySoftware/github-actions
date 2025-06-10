@@ -80,9 +80,15 @@ class Release
   end
 
   def find_or_create_technical_notes
+    parent_technical_note = ReleaseNotes::ReleaseNote.find_or_create(
+      parent_id: jira_assets.release_note.id,
+      title: "Technical Notes",
+      version:
+    )
+
     jira_assets.technical_notes ||= TECHNICAL_NOTE_TITLES.map do |title|
       ReleaseNotes::TechnicalNote.find_or_create(
-        parent_id: jira_assets.release_note.id,
+        parent_id: parent_technical_note.id,
         title:,
         version:
       )
