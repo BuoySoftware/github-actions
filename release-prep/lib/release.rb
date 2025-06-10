@@ -106,7 +106,7 @@ class Release
     jira_assets.deployment_plans ||= [
       ReleaseNotes::DeploymentPlan.find_or_create(
         parent_id: parent_deployment_note.id,
-        title: ENV.fetch("GITHUB_REPO"),
+        title: "#{ENV.fetch('GITHUB_REPO')} Deployment Plan",
         version:
       ),
     ]
