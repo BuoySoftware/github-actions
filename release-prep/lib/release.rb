@@ -9,12 +9,6 @@ require_relative "release_notes/technical_note"
 require_relative "version"
 
 class Release
-  DEPLOYMENT_PLAN_TITLES = [
-    "Buoy Rails",
-    "Infirmary",
-    "Wharf",
-  ].freeze
-
   TECHNICAL_NOTE_TITLES = [
     "DMS Technical Notes",
     "PMS Technical Notes",
@@ -49,7 +43,7 @@ class Release
     puts "finding or creating technical notes..."
     find_or_create_technical_notes
     puts "finding or creating deployment plans..."
-    find_or_create_deployment_plans
+    find_or_create_deployment_plan
     puts "creating or updating jira release card..."
     create_or_update_jira_release_card
     puts "creating asana release card..."
@@ -95,14 +89,21 @@ class Release
     end
   end
 
-  def find_or_create_deployment_plans
-    jira_assets.deployment_plans ||= DEPLOYMENT_PLAN_TITLES.map do |title|
+  def find_or_create_deployment_plan
+    # Create parent "Deployment Plans" note
+    parent_deployment_note = ReleaseNotes::ReleaseNote.find_or_create(
+      parent_id: jira_assets.release_note.id,
+      title: "Deployment Plans",
+      version:
+    )
+
+    jira_assets.deployment_plans ||= [
       ReleaseNotes::DeploymentPlan.find_or_create(
-        parent_id: jira_assets.release_note.id,
-        title:,
+        parent_id: parent_deployment_note.id,
+        title: ENV.fetch("GITHUB_REPO"),
         version:
-      )
-    end
+      ),
+    ]
   end
 
   def create_or_update_jira_release_card
