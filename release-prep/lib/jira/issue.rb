@@ -26,6 +26,14 @@ module Jira
       new(targets.first)
     end
 
+    def pre_deploy_instructions
+      attrs["fields"]["customfield_10859"]
+    end
+
+    def post_deploy_instructions
+      attrs["fields"]["customfield_10858"]
+    end
+
     def add_to_version(version)
       save({
         "fields" => {
