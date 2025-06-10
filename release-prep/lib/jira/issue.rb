@@ -26,11 +26,11 @@ module Jira
       new(targets.first)
     end
 
-    def pre_deploy_instructions
+    def pre_deployment_instructions
       attrs["fields"]["customfield_10859"]
     end
 
-    def post_deploy_instructions
+    def post_deployment_instructions
       attrs["fields"]["customfield_10858"]
     end
 

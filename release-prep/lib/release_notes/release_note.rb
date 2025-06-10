@@ -9,11 +9,12 @@ module ReleaseNotes
       release_note.find_or_create
     end
 
-    def initialize(version:, body: nil, parent_id: nil, title: nil)
-      @body = body || self.class::TEMPLATE
+    def initialize(version:, body: nil, parent_id: nil, title: nil, jira_assets: nil)
+      @body = body
       @parent_id = parent_id
       @title = [title, version.name].compact.join(" ")
       @version = version
+      @jira_assets = jira_assets
     end
 
     def find_or_create
@@ -30,7 +31,15 @@ module ReleaseNotes
 
     private
 
-    attr_reader :body, :parent_id, :title, :version
+    attr_reader :parent_id, :title, :version, :jira_assets
+
+    def body
+      @body ||= generate_template
+    end
+
+    def generate_template
+      self.class.const_defined?(:TEMPLATE) ? self.class::TEMPLATE : ""
+    end
 
     def space_key
       ENV.fetch("CONFLUENCE_RELEASES_SPACE_KEY")
