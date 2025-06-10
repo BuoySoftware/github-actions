@@ -12,36 +12,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Validate Environment Variables
-      shell: bash
-      run: |
-        required_vars=(
-          "ASANA_PAT"
-          "ASANA_PROJECT_ID"
-          "ASANA_SECTION_ID"
-          "ATLASSIAN_API_TOKEN"
-          "ATLASSIAN_EMAIL"
-          "ATLASSIAN_URL"
-          "CONFLUENCE_RELEASES_SPACE_KEY"
-          "CONFLUENCE_RELEASES_VERSIONS_PARENT_PAGE_ID"
-          "GITHUB_ORG"
-          "GITHUB_PAT"
-          "GITHUB_REPO"
-        )
-        
-        missing_vars=()
-        for var in "${required_vars[@]}"; do
-          if [ -z "${!var}" ]; then
-            missing_vars+=("$var")
-          fi
-        done
-        
-        if [ ${#missing_vars[@]} -ne 0 ]; then
-          echo "Error: The following required environment variables are not set:"
-          printf '%s\n' "${missing_vars[@]}"
-          exit 1
-        fi
-
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: 'latest'
