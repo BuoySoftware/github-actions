@@ -5,58 +5,30 @@ module ReleaseNotes
     private
 
     def generate_template
-      <<~HTML
-        <div>
-          <h1>Pre-Deployment Instructions</h1>
-          <table>
-            <thead>
-              <tr>
-                <th>Jira Issue</th>
-                <th>Instructions</th>
-              </tr>
-            </thead>
-            <tbody>
-              #{generate_pre_deployment_table_rows}
-            </tbody>
-          </table>
-        </div>
-        <hr />
-        <div>
-          <h1>Post-Deployment Instructions</h1>
-          <table>
-            <thead>
-              <tr>
-                <th>Jira Issue</th>
-                <th>Instructions</th>
-              </tr>
-            </thead>
-            <tbody>
-              #{generate_post_deployment_table_rows}
-            </tbody>
-          </table>
-        </div>
-      HTML
+      <<~WIKI
+        h1. Pre-Deployment Instructions
+
+        || Jira Issue || Instructions ||
+        #{generate_pre_deployment_table_rows}
+
+        ----
+
+        h1. Post-Deployment Instructions
+
+        || Jira Issue || Instructions ||
+        #{generate_post_deployment_table_rows}
+      WIKI
     end
 
     def generate_pre_deployment_table_rows
       issues_with_pre_deployment_instructions.map do |issue|
-        <<~HTML.strip
-          <tr>
-            <td><a href="#{issue.url}">#{issue.key}</a></td>
-            <td>#{issue.pre_deployment_instructions}</td>
-          </tr>
-        HTML
+        "| [#{issue.key}|#{issue.url}] | #{issue.pre_deployment_instructions} |"
       end.join("\n")
     end
 
     def generate_post_deployment_table_rows
       issues_with_post_deployment_instructions.map do |issue|
-        <<~HTML.strip
-          <tr>
-            <td><a href="#{issue.url}">#{issue.key}</a></td>
-            <td>#{issue.post_deployment_instructions}</td>
-          </tr>
-        HTML
+        "| [#{issue.key}|#{issue.url}] | #{issue.post_deployment_instructions} |"
       end.join("\n")
     end
 

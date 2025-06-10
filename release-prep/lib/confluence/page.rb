@@ -7,9 +7,9 @@ module Confluence
     def self.create(body:, space_key:, title:, parent_id: nil)
       params = {
         body: {
-          storage: {
+          wiki: {
             value: body,
-            representation: "storage",
+            representation: "wiki",
           },
         },
         title: title,
