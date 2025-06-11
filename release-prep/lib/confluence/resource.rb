@@ -32,7 +32,11 @@ module Confluence
       @json = json
     end
 
-    private
+    def update(params)
+      updated_json = Client.instance.put("#{self.class::API_PATH}/#{id}", params:)
+      @json = updated_json
+      self
+    end
 
     attr_reader :json
   end

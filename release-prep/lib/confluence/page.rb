@@ -24,6 +24,28 @@ module Confluence
       super(params)
     end
 
+    def update(body:, title: nil)
+      current_page = self.class.find(id)
+      current_version = current_page.json["version"]["number"]
+
+      params = {
+        id: id,
+        type: "page",
+        title: title || self.title,
+        body: {
+          wiki: {
+            value: body,
+            representation: "wiki",
+          },
+        },
+        version: {
+          number: current_version + 1,
+        },
+      }
+
+      super(params)
+    end
+
     def id
       json["id"]
     end

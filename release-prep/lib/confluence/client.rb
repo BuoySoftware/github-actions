@@ -22,6 +22,14 @@ module Confluence
       handle_response(response)
     end
 
+    def put(path, params: {})
+      response = connection.put(path) do |req|
+        req.body = params.to_json
+      end
+
+      handle_response(response)
+    end
+
     private
 
     def connection
