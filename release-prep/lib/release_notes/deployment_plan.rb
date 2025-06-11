@@ -22,14 +22,23 @@ module ReleaseNotes
 
     def generate_pre_deployment_table_rows
       issues_with_pre_deployment_instructions.map do |issue|
-        "| [#{issue.key}|#{issue.url}] | #{issue.pre_deployment_instructions} |"
+        cleaned_instructions = clean_line_breaks(issue.pre_deployment_instructions)
+        "| [#{issue.key}|#{issue.url}] | #{cleaned_instructions} |"
       end.join("\n")
     end
 
     def generate_post_deployment_table_rows
       issues_with_post_deployment_instructions.map do |issue|
-        "| [#{issue.key}|#{issue.url}] | #{issue.post_deployment_instructions} |"
+        cleaned_instructions = clean_line_breaks(issue.post_deployment_instructions)
+        "| [#{issue.key}|#{issue.url}] | #{cleaned_instructions} |"
       end.join("\n")
+    end
+
+    def clean_line_breaks(text)
+      return "" unless text
+
+      # Replace multiple consecutive line breaks with a single line break
+      text.gsub(/\n+/, "\n")
     end
 
     def issues_with_pre_deployment_instructions
