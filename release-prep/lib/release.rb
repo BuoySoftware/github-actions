@@ -3,6 +3,7 @@ require_relative "environment_feature_flags"
 require_relative "github_assets"
 require_relative "jira_assets"
 require_relative "jira_release_card"
+require_relative "jira/version"
 require_relative "release_notes/deployment_plan"
 require_relative "release_notes/release_note"
 require_relative "release_notes/technical_note"
@@ -58,7 +59,7 @@ class Release
 
   def find_or_create_jira_project_versions
     jira_assets.project_versions ||= jira_assets.projects.map do |project|
-      project.find_or_create_version(version.name)
+      Jira::Version.create_or_update(project_id: project.id, name: version.name)
     end
   end
 
