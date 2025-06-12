@@ -76,11 +76,15 @@ class Release
   end
 
   def find_or_create_release_note
-    jira_assets.release_note ||= ReleaseNotes::ReleaseNote.find_or_create(version:)
+    jira_assets.release_note ||= ReleaseNotes::ReleaseNote.find_or_create(
+      body: "{children:all=true}",
+      version:
+    )
   end
 
   def find_or_create_technical_notes
     parent_technical_note = ReleaseNotes::ReleaseNote.find_or_create(
+      body: "{children:all=true}",
       parent_id: jira_assets.release_note.id,
       title: "Technical Notes",
       version:
@@ -98,6 +102,7 @@ class Release
   def find_or_create_deployment_plan
     # Create parent "Deployment Plans" note
     parent_deployment_note = ReleaseNotes::ReleaseNote.find_or_create(
+      body: "{children:all=true}",
       parent_id: jira_assets.release_note.id,
       title: "Deployment Plans",
       version:
