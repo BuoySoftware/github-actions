@@ -70,7 +70,7 @@ class JiraAssets
     end
   end
 
-  def find_or_create_release_card(release:)
+  def create_or_update_release_card(release:)
     self.release_card ||= JiraReleaseCard.create_or_update(release: release)
   end
 

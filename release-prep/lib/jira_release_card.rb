@@ -47,7 +47,7 @@ class JiraReleaseCard
         "description" => description,
         "customfield_10298" => release.version.number,
         "customfield_10297" => { "value" => ENV.fetch("GITHUB_REPO") },
-        "customfield_10363" => release.confluence_assets.release_note.url,
+        "customfield_10363" => release.confluence_assets.version_note.url,
       },
     }
   end

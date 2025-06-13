@@ -23,7 +23,7 @@ module ReleaseNotes
     end
 
     def find_or_create
-      page = Confluence::Page.find_by(space_key:, title:)
+      page = Confluence::Page.find_by(parent_id:, space_key:, title:)
 
       if page
         puts " - Page Found: #{title}"
@@ -35,7 +35,7 @@ module ReleaseNotes
     end
 
     def create_or_update
-      page = Confluence::Page.find_by(space_key:, title:)
+      page = Confluence::Page.find_by(parent_id:, space_key:, title:)
 
       if page
         puts " - Page Found, Updating: #{title}"
@@ -52,6 +52,12 @@ module ReleaseNotes
 
     def body
       @body ||= generate_template
+    end
+
+    def clean_line_breaks(text)
+      return "" unless text
+
+      text.gsub(/\n+/, "\n")
     end
 
     def generate_template

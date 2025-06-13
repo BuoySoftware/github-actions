@@ -34,13 +34,6 @@ module ReleaseNotes
       end.join("\n")
     end
 
-    def clean_line_breaks(text)
-      return "" unless text
-
-      # Replace multiple consecutive line breaks with a single line break
-      text.gsub(/\n+/, "\n")
-    end
-
     def issues_with_pre_deployment_instructions
       return [] unless jira_assets&.issues
 

@@ -31,13 +31,15 @@ class Release
     puts "assigning project versions to issues..."
     jira_assets.assign_versions_to_issues
     puts "finding or creating release notes..."
-    confluence_assets.find_or_create_release_note
+    confluence_assets.find_or_create_version_note
     puts "finding or creating technical notes..."
     confluence_assets.find_or_create_technical_notes
     puts "finding or creating deployment plans..."
     confluence_assets.find_or_create_deployment_plans
+    puts "creating or updating scraped release notes..."
+    confluence_assets.update_or_create_scraped_release_notes
     puts "creating or updating jira release card..."
-    jira_assets.find_or_create_release_card(release: self)
+    jira_assets.create_or_update_release_card(release: self)
     puts "creating asana release card..."
     create_asana_release_card
   end
