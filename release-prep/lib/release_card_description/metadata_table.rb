@@ -17,10 +17,11 @@ module ReleaseCardDescription
     def project_versions
       release.jira_assets.versions_by_project.map do |group|
         project, version = group.values_at(:project, :version)
-        url = "#{ENV.fetch('ATLASSIAN_URL')}/projects/#{project.key}/versions/#{version.attrs['id']}"
+        url = "#{ENV.fetch('ATLASSIAN_URL')}/projects/#{project.key}/versions/" \
+              "#{version.attrs['id']}"
 
         "[#{project.key}|#{url}]"
       end.join("\n")
     end
   end
-end 
+end

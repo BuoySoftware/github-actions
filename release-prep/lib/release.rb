@@ -1,23 +1,13 @@
 require_relative "asana_release_card"
+require_relative "confluence_assets"
 require_relative "environment_feature_flags"
 require_relative "github_assets"
 require_relative "jira_assets"
 require_relative "jira_release_card"
 require_relative "jira/version"
-require_relative "release_notes/deployment_plan"
-require_relative "release_notes/release_note"
-require_relative "release_notes/technical_note"
 require_relative "version"
 
 class Release
-  TECHNICAL_NOTE_TITLES = [
-    "DMS Technical Notes",
-    "PMS Technical Notes",
-    "Payments & CRM Technical Notes",
-    "Medical Device Technical Notes",
-    "Integrations API Technical Notes",
-  ].freeze
-
   def self.prepare(base_ref:, head_ref:)
     new(base_ref:, head_ref:).prepare
   end
@@ -26,9 +16,11 @@ class Release
     @version = Version.new(ref: head_ref)
     @github_assets = GithubAssets.new(base_ref:, head_ref:)
     @jira_assets = JiraAssets.new(github_assets:)
+    @confluence_assets = ConfluenceAssets.new(jira_assets:, version:)
   end
 
   attr_reader :asana_release_card,
+    :confluence_assets,
     :github_assets,
     :jira_assets,
     :version
@@ -40,11 +32,11 @@ class Release
     puts "assigning project versions to issues..."
     assign_project_version_to_issues
     puts "finding or creating release notes..."
-    find_or_create_release_note
+    confluence_assets.find_or_create_release_note
     puts "finding or creating technical notes..."
-    find_or_create_technical_notes
+    confluence_assets.find_or_create_technical_notes
     puts "finding or creating deployment plans..."
-    find_or_create_deployment_plan
+    confluence_assets.find_or_create_deployment_plans
     puts "creating or updating jira release card..."
     create_or_update_jira_release_card
     puts "creating asana release card..."
@@ -74,49 +66,6 @@ class Release
         issue.add_to_version(jira_version)
       end
     end
-  end
-
-  def find_or_create_release_note
-    jira_assets.release_note ||= ReleaseNotes::ReleaseNote.find_or_create(
-      body: "{children:all=true}",
-      version:
-    )
-  end
-
-  def find_or_create_technical_notes
-    parent_technical_note = ReleaseNotes::ReleaseNote.find_or_create(
-      body: "{children:all=true}",
-      parent_id: jira_assets.release_note.id,
-      title: "Technical Notes",
-      version:
-    )
-
-    jira_assets.technical_notes ||= TECHNICAL_NOTE_TITLES.map do |title|
-      ReleaseNotes::TechnicalNote.find_or_create(
-        parent_id: parent_technical_note.id,
-        title:,
-        version:
-      )
-    end
-  end
-
-  def find_or_create_deployment_plan
-    # Create parent "Deployment Plans" note
-    parent_deployment_note = ReleaseNotes::ReleaseNote.find_or_create(
-      body: "{children:all=true}",
-      parent_id: jira_assets.release_note.id,
-      title: "Deployment Plans",
-      version:
-    )
-
-    jira_assets.deployment_plans ||= [
-      ReleaseNotes::DeploymentPlan.create_or_update(
-        parent_id: parent_deployment_note.id,
-        title: "#{ENV.fetch('GITHUB_REPO')} Deployment Plan",
-        version:,
-        jira_assets:
-      ),
-    ]
   end
 
   def create_or_update_jira_release_card

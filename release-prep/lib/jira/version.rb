@@ -74,4 +74,3 @@ module Jira
     end
   end
 end
-

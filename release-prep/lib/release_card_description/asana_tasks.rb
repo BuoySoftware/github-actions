@@ -49,4 +49,4 @@ module ReleaseCardDescription
       ].join("\n")
     end
   end
-end 
+end

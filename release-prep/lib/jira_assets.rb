@@ -5,11 +5,8 @@ class JiraAssets
   ISSUE_KEY_REGEX = /[A-Z]+-\d+/
 
   attr_accessor(
-    :deployment_plans,
     :project_versions,
-    :release_card,
-    :release_note,
-    :technical_notes
+    :release_card
   )
 
   def initialize(github_assets:)

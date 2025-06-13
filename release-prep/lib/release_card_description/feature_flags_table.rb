@@ -13,4 +13,4 @@ module ReleaseCardDescription
       MARKDOWN
     end
   end
-end 
+end

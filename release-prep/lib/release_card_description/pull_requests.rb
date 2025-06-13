@@ -96,4 +96,4 @@ module ReleaseCardDescription
       ].any?
     end
   end
-end 
+end

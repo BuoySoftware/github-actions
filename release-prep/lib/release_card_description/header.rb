@@ -12,4 +12,4 @@ module ReleaseCardDescription
       "#{ENV.fetch('GITHUB_REPO')} #{release.version.name}"
     end
   end
-end 
+end

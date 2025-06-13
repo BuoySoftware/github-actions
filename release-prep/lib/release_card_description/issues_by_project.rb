@@ -25,7 +25,7 @@ module ReleaseCardDescription
     private
 
     def pull_requests_for_issue(issue)
-      pull_requests_by_issue.find do |group|
+      pull_requests_by_issue.detect do |group|
         group[:issue] == issue
       end[:pull_requests]
     end
@@ -35,7 +35,7 @@ module ReleaseCardDescription
         {
           issue:,
           pull_requests: release.github_assets.pull_requests.select do |pull_request|
-            commit_messages = release.github_assets.commits_by_pull_request.find do |group|
+            commit_messages = release.github_assets.commits_by_pull_request.detect do |group|
               group[:pull_request] == pull_request
             end[:commits].map(&:commit).map(&:message).join("\n")
 
@@ -49,4 +49,4 @@ module ReleaseCardDescription
       end
     end
   end
-end 
+end
