@@ -1,5 +1,7 @@
 require_relative "jira/issue"
 require_relative "jira/project"
+require_relative "jira/version"
+require_relative "jira_release_card"
 
 class JiraAssets
   ISSUE_KEY_REGEX = /[A-Z]+-\d+/
@@ -9,8 +11,9 @@ class JiraAssets
     :release_card
   )
 
-  def initialize(github_assets:)
+  def initialize(github_assets:, version:)
     @github_assets = github_assets
+    @version = version
   end
 
   def issues
@@ -48,9 +51,32 @@ class JiraAssets
     end
   end
 
+  def find_or_create_project_versions
+    self.project_versions ||= projects.map do |project|
+      Jira::Version.create_or_update(project_id: project.id, name: version.name)
+    end
+  end
+
+  def assign_versions_to_issues
+    versions_by_project.each do |group|
+      project, jira_version = group.values_at(:project, :version)
+      issues = issues_by_project.detect { |group|
+        group[:project].key == project.key
+      }[:issues]
+
+      issues.each do |issue|
+        issue.add_to_version(jira_version)
+      end
+    end
+  end
+
+  def find_or_create_release_card(release:)
+    self.release_card ||= JiraReleaseCard.create_or_update(release: release)
+  end
+
   private
 
-  attr_reader :github_assets
+  attr_reader :github_assets, :version
 
   def issue_keys
     @issue_keys ||= [
