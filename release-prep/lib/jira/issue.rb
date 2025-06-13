@@ -26,12 +26,20 @@ module Jira
       new(targets.first)
     end
 
+    def feature_flag
+      attrs["fields"]["customfield_10429"]
+    end
+
     def pre_deployment_instructions
       attrs["fields"]["customfield_10859"]
     end
 
     def post_deployment_instructions
       attrs["fields"]["customfield_10858"]
+    end
+
+    def release_notes
+      attrs["fields"]["customfield_10363"]
     end
 
     def add_to_version(version)
