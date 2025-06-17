@@ -15,8 +15,7 @@ module ReleaseCardDescription
     private
 
     def project_versions
-      release.jira_assets.versions_by_project.map do |group|
-        project, version = group.values_at(:project, :version)
+      release.jira_assets.versions_by_project.map do |project, version|
         url = "#{ENV.fetch('ATLASSIAN_URL')}/projects/#{project.key}/versions/" \
               "#{version.attrs['id']}"
 

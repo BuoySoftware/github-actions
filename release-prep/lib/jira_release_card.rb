@@ -1,10 +1,11 @@
 require_relative "jira/issue"
-require_relative "release_card_description/header"
-require_relative "release_card_description/metadata_table"
-require_relative "release_card_description/issues_by_project"
 require_relative "release_card_description/asana_tasks"
-require_relative "release_card_description/feature_flags_table"
+require_relative "release_card_description/environment_feature_flags_table"
+require_relative "release_card_description/header"
+require_relative "release_card_description/issues_by_project"
+require_relative "release_card_description/metadata_table"
 require_relative "release_card_description/pull_requests"
+require_relative "release_card_description/release_notes_by_feature_flag"
 
 class JiraReleaseCard
   ASANA_LEGACY_LINK_REGEX = %r{https?://app\.asana\.com/\d+/\d+/\d+}
@@ -58,12 +59,17 @@ class JiraReleaseCard
 
   def description
     [
-      ReleaseCardDescription::Header.build(release: release),
-      ReleaseCardDescription::MetadataTable.build(release: release),
-      ReleaseCardDescription::IssuesByProject.build(release: release),
-      ReleaseCardDescription::AsanaTasks.build(release: release),
-      ReleaseCardDescription::FeatureFlagsTable.build(release: release),
-      ReleaseCardDescription::PullRequests.build(release: release),
+      ReleaseCardDescription::Header.build(release:),
+      ReleaseCardDescription::MetadataTable.build(release:),
+      ReleaseCardDescription::IssuesByProject.build(release:),
+      "----",
+      ReleaseCardDescription::ReleaseNotesByFeatureFlag.build(release:),
+      "----",
+      ReleaseCardDescription::EnvironmentFeatureFlagsTable.build(release:),
+      "----",
+      ReleaseCardDescription::PullRequests.build(release:),
+      "----",
+      ReleaseCardDescription::AsanaTasks.build(release:),
     ].join("\n\n")
   end
 end

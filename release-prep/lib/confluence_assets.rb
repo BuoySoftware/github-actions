@@ -52,9 +52,7 @@ class ConfluenceAssets
   end
 
   def update_or_create_scraped_release_notes
-    self.scraped_release_notes ||= jira_assets.issues_by_project.map do |group|
-      project, issues = group.values_at(:project, :issues)
-
+    self.scraped_release_notes ||= jira_assets.issues_by_project.map do |project, issues|
       ReleaseNotes::ScrapedReleaseNotes.create_or_update(
         issues:,
         parent_id: parent_scraped_release_notes.id,

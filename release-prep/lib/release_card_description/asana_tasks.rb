@@ -34,8 +34,6 @@ module ReleaseCardDescription
 
     def asana_tasks_markdown(prs_by_asana_link)
       <<~MARKDOWN
-        ----
-
         h2. Asana Tasks
 
         #{prs_by_asana_link.map { |group| asana_task_group_markdown(group) }.join("\n")}

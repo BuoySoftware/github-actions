@@ -23,11 +23,8 @@ class JiraAssets
   end
 
   def issues_by_project
-    @issues_by_project ||= projects.map do |project|
-      {
-        project:,
-        issues: issues.select { |issue| issue.project.key == project.key },
-      }
+    @issues_by_project ||= projects.each_with_object({}) do |project, memo|
+      memo[project] = issues.select { |issue| issue.project.key == project.key }
     end
   end
 
@@ -41,13 +38,10 @@ class JiraAssets
   def versions_by_project
     return nil if project_versions.nil?
 
-    @versions_by_project ||= projects.map do |project|
-      {
-        project:,
-        version: project_versions.detect do |project_version|
-          project_version.attrs["projectId"].to_s == project.id
-        end,
-      }
+    @versions_by_project ||= projects.each_with_object({}) do |project, memo|
+      memo[project] = project_versions.detect do |project_version|
+        project_version.attrs["projectId"].to_s == project.id
+      end
     end
   end
 
@@ -58,11 +52,8 @@ class JiraAssets
   end
 
   def assign_versions_to_issues
-    versions_by_project.each do |group|
-      project, jira_version = group.values_at(:project, :version)
-      issues = issues_by_project.detect { |group|
-        group[:project].key == project.key
-      }[:issues]
+    versions_by_project.each do |project, jira_version|
+      issues = issues_by_project[project]
 
       issues.each do |issue|
         issue.add_to_version(jira_version)
