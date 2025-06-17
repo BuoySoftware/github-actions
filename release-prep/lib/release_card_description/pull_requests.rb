@@ -20,10 +20,10 @@ module ReleaseCardDescription
         [
           "h3. #{group}",
           pull_requests.map do |pull_request|
-            " * [##{pull_request.number}: #{pull_request.title}|#{pull_request.html_url}]"
+            "* [##{pull_request.number}: #{pull_request.title}|#{pull_request.html_url}]"
           end.join("\n"),
         ].join("\n")
-      end.join("\n")
+      end.join("\n\n")
     end
 
     def pull_requests_by_group

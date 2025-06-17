@@ -18,7 +18,7 @@ module ReleaseCardDescription
           table_header,
           generate_rows(issues),
         ].join("\n")
-      end
+      end.join("\n\n")
     end
 
     def table_header

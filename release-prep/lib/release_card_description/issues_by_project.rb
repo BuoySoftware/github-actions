@@ -16,8 +16,8 @@ module ReleaseCardDescription
         [
           "h3. #{project.name}",
           issues.map { |issue| " * #{issue.key}" },
-        ]
-      end
+        ].join("\n")
+      end.join("\n\n")
     end
   end
 end
