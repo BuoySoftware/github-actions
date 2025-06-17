@@ -1,6 +1,5 @@
 require_relative "release_notes/deployment_plan"
 require_relative "release_notes/release_note"
-require_relative "release_notes/scraped_release_notes"
 require_relative "release_notes/technical_note"
 
 class ConfluenceAssets
@@ -13,7 +12,6 @@ class ConfluenceAssets
   ].freeze
 
   attr_accessor :deployment_plans,
-    :scraped_release_notes,
     :technical_notes,
     :version_note
 
@@ -51,17 +49,6 @@ class ConfluenceAssets
     )
   end
 
-  def update_or_create_scraped_release_notes
-    self.scraped_release_notes ||= jira_assets.issues_by_project.map do |project, issues|
-      ReleaseNotes::ScrapedReleaseNotes.create_or_update(
-        issues:,
-        parent_id: parent_scraped_release_notes.id,
-        title: "Scraped Release Notes #{project.key}",
-        version:
-      )
-    end
-  end
-
   private
 
   attr_reader :jira_assets, :version
@@ -71,15 +58,6 @@ class ConfluenceAssets
       body: "{children:all=true}",
       parent_id: version_note.id,
       title: "Deployment Plans",
-      version: version
-    )
-  end
-
-  def parent_scraped_release_notes
-    @parent_scraped_release_notes ||= ReleaseNotes::ReleaseNote.find_or_create(
-      body: "{children:all=true}",
-      parent_id: "71270523",
-      title: "Scraped Release Notes",
       version: version
     )
   end
