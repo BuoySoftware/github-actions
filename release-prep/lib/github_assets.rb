@@ -1,6 +1,11 @@
 require "octokit"
 
+require_relative "github/client"
+require_relative "github/pull_request"
+
 class GithubAssets
+  include Github::Client
+
   def initialize(base_ref:, head_ref:)
     @base_ref = base_ref
     @head_ref = head_ref
@@ -35,12 +40,10 @@ class GithubAssets
   def pull_requests
     @pull_requests ||= commits.flat_map.with_index do |commit, index|
       puts "Processing commit #{index + 1} of #{commits.size}: #{commit.sha}"
-      client.commit_pulls(repository.id, commit.sha)
+      client.commit_pulls(repository.id, commit.sha).map do |pull_request|
+        Github::PullRequest.new(pull_request)
+      end
     end.uniq(&:number)
-  end
-
-  def repository
-    @repository ||= client.repository("#{ENV.fetch('GITHUB_ORG')}/#{ENV.fetch('GITHUB_REPO')}")
   end
 
   def commits_by_pull_request
@@ -50,11 +53,5 @@ class GithubAssets
         commits: client.pull_request_commits(repository.id, pull_request.number),
       }
     end
-  end
-
-  private
-
-  def client
-    @client ||= Octokit::Client.new(access_token: ENV.fetch("GITHUB_PAT"))
   end
 end
