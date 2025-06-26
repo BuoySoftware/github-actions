@@ -9,8 +9,8 @@ inputs:
   jira-base-url:
     description: "Base URL for Jira instance"
     required: true
-  ticket-pattern:
-    description: "Regex pattern to extract ticket ID from branch name"
+  ticket-patterns:
+    description: "Comma-separated list of regex patterns to extract ticket ID from branch name"
     required: true
 
 runs:
@@ -20,7 +20,22 @@ runs:
       id: extract
       shell: bash
       run: |
-        ticket_id=$(echo '${{ github.head_ref }}' | grep -oE '${{ inputs.ticket-pattern }}')
+        # Convert comma-separated patterns to array
+        IFS=',' read -ra PATTERNS <<< "${{ inputs.ticket-patterns }}"
+        
+        ticket_id=""
+        for pattern in "${PATTERNS[@]}"; do
+          # Trim whitespace from pattern
+          pattern=$(echo "$pattern" | xargs)
+          if [ -n "$pattern" ]; then
+            extracted=$(echo '${{ github.head_ref }}' | grep -oE "$pattern")
+            if [ -n "$extracted" ]; then
+              ticket_id="$extracted"
+              break
+            fi
+          fi
+        done
+        
         echo "ticket_id=$ticket_id" >> $GITHUB_OUTPUT
         
         if [ -n "$ticket_id" ]; then
