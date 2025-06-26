@@ -1,0 +1,54 @@
+name: "Link Jira Ticket to PR"
+description: "Automatically adds Jira ticket link to PR description based on branch name"
+
+inputs:
+  github-token:
+    description: "GitHub token for API access"
+    required: true
+    default: ${{ github.token }}
+  jira-base-url:
+    description: "Base URL for Jira instance"
+    required: true
+  ticket-pattern:
+    description: "Regex pattern to extract ticket ID from branch name"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Extract Jira Ticket ID
+      id: extract
+      shell: bash
+      run: |
+        ticket_id=$(echo '${{ github.head_ref }}' | grep -oE '${{ inputs.ticket-pattern }}')
+        echo "ticket_id=$ticket_id" >> $GITHUB_OUTPUT
+        
+        if [ -n "$ticket_id" ]; then
+          jira_url="${{ inputs.jira-base-url }}/browse/${ticket_id}"
+          echo "jira_url=$jira_url" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Update PR Body
+      if: steps.extract.outputs.ticket_id != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        ticket="${{ steps.extract.outputs.ticket_id }}"
+        jira_url="${{ steps.extract.outputs.jira_url }}"
+
+        # Get the existing PR body
+        pr_number=${{ github.event.pull_request.number }}
+        repo=${{ github.repository }}
+        original_body=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          "https://api.github.com/repos/${repo}/pulls/${pr_number}" | jq -r '.body')
+
+        # Only update if the Jira ticket isn't already mentioned
+        if ! echo "$original_body" | grep -q "$ticket"; then
+          updated_body="${original_body}"$'\n\n''---'$'\n\n'"🔗 Jira Ticket: [${ticket}](${jira_url})"
+
+          curl -s -X PATCH -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg body "$updated_body" '{body: $body}')" \
+            "https://api.github.com/repos/${repo}/pulls/${pr_number}"
+        fi
