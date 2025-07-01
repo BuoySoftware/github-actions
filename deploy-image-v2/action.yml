@@ -78,13 +78,9 @@ runs:
       run: |
         git config --global user.name "buoysoftware-bot"
         git config --global user.email "buoysoftware-bot@users.noreply.github.com"
-        if ! git diff --cached --quiet; then
-          git commit -am "Update deployment image tag for ${{ inputs.application }}-${{ inputs.environment }} to ${{ inputs.image_tag }} [skip ci]"
-          git pull --rebase --autostash
-          git push
-        else
-          echo "No changes to commit."
-        fi
+        git commit -am "Update deployment image tag for ${{ inputs.application }}-${{ inputs.environment }} to ${{ inputs.image_tag }} [skip ci]"
+        git pull --rebase --autostash
+        git push
 
     - name: Notify Slack on failure
       if: failure() && inputs.slack_webhook_url != ''
