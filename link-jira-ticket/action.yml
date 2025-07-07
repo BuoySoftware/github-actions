@@ -28,7 +28,7 @@ runs:
           # Trim whitespace from pattern
           pattern=$(echo "$pattern" | xargs)
           if [ -n "$pattern" ]; then
-            extracted=$(echo '${{ github.head_ref }}' | grep -oE "$pattern")
+            extracted=$(echo '${{ github.head_ref }}' | grep -oiE "$pattern")
             if [ -n "$extracted" ]; then
               ticket_id="$extracted"
               break
