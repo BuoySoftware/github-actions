@@ -1,27 +1,26 @@
 name: Build docker image
+description: Build and push Docker images to ECR
 
 inputs:
   ecr_repository:
     description: ECR repo to push image
     required: false
-    type: string
   aws_access_key_id:
     description: AWS ECR access key id
     required: true
-    type: string
   aws_secret_access_key:
     description: AWS ECR secret access key
     required: true
-    type: string
   build_args:
     description: Additional docker build args
-    type: string
   slack_webhook_url:
     description: Slack webhook URL for notifications
     required: false
-    type: string
 
 outputs:
+  ref_tag:
+    description: "Ref tag assigned to the image"
+    value: ${{ steps.current-git-details.outputs.tag }}
   registry:
     description: "ECR registry for the image"
     value: ${{ steps.login-ecr.outputs.registry }}
@@ -40,13 +39,20 @@ runs:
       id: current-git-details
       shell: bash
       run: |
-        echo "short=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        echo "short=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
         echo "long=sha-$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
         if [[ "${{ github.ref }}" == refs/tags/* ]]; then
           echo "tag=tag-${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          
+          # Create unique trace tag with SHORT_SHA and datetime
+          DATETIME=$(date -u +"%Y%m%d-%H%M%S")
+          TRACE="trace-sha-${SHORT_SHA}-${DATETIME}"
+          echo "trace=${TRACE}" >> $GITHUB_OUTPUT
         else
           echo "tag=" >> $GITHUB_OUTPUT
+          echo "trace=" >> $GITHUB_OUTPUT
         fi
 
     - name: Configure Amazon ECR Credentials
@@ -68,22 +74,26 @@ runs:
         REPOSITORY: ${{ inputs.ecr_repository }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
+        TRACE_TAG: ${{ steps.current-git-details.outputs.trace }}
       run: |
-        REF_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$REF_TAG > /dev/null 2>&1 && echo yes || echo no)
-        SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
+        if [[ -n "$REF_TAG" ]]; then
+          REF_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$REF_TAG > /dev/null 2>&1 && echo yes || echo no)
 
-        if [[ "$REF_IMAGE_EXISTS" == "yes" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
+          if [[ "$REF_IMAGE_EXISTS" == "yes" ]]; then
+            echo "Ref tag image already exists, skipping build step"
+            echo "image_exists=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "Ref tag image not found, building fresh image"
+            echo "image_exists=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+        fi
+
+        # For non tagged builds, check if we need to build a new image
+        SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
+        if [[ "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
           echo "Image already exists, skipping build step"
-          echo "image_exists=true" >> $GITHUB_OUTPUT
-        elif [[ -n "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is not empty, and ref image doesn't exist, but short image does. Pulling short image and tagging it with ref tag."
-          docker pull $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG
-          docker tag $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG $REGISTRY/$REPOSITORY:$REF_TAG
-          docker push $REGISTRY/$REPOSITORY:$REF_TAG
-          echo "Skipping build step"
-          echo "image_exists=true" >> $GITHUB_OUTPUT
-        elif [[ -z "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is empty, and ref image doesn't exist, but short image does. Skipping build step"
           echo "image_exists=true" >> $GITHUB_OUTPUT
         else
           echo "Image not found, proceeding with build step"
@@ -99,11 +109,17 @@ runs:
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
         LONG_SHA_TAG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
+        TRACE_TAG: ${{ steps.current-git-details.outputs.trace }}
         BUILD_ARGS: ${{ inputs.build_args }}
       run: |
-          TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
-          if [ -n "${{ steps.current-git-details.outputs.tag }}" ]; then
-            TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
+          # For tagged builds, use ref and trace tags
+          if [ -n "$REF_TAG" ]; then
+            TAGS="-t $REGISTRY/$REPOSITORY:$REF_TAG -t $REGISTRY/$REPOSITORY:$TRACE_TAG"
+            echo "Building with ref tag: $REF_TAG and trace tag: $TRACE_TAG"
+          else
+            # For non-tagged builds, use SHA tags
+            TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
+            echo "Building with SHA tags: $SHORT_SHA_TAG, $LONG_SHA_TAG"
           fi
 
           docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG
