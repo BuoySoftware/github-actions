@@ -1,27 +1,33 @@
 name: Build docker image
+description: This action builds a docker image and pushes it to AWS ECR.
 
 inputs:
-  ecr_repository:
-    description: ECR repo to push image
-    required: false
-    type: string
   aws_access_key_id:
     description: AWS ECR access key id
     required: true
-    type: string
   aws_secret_access_key:
     description: AWS ECR secret access key
     required: true
-    type: string
   build_args:
     description: Additional docker build args
-    type: string
+  ecr_repository:
+    description: ECR repo to push image
+    required: false
+  security_patch:
+    default: "false"
+    description: When true, signify that the build is a security patch
+    required: false
   slack_webhook_url:
     description: Slack webhook URL for notifications
     required: false
-    type: string
 
 outputs:
+  long_sha_tag:
+    description: "Long SHA tag assigned to the image"
+    value: ${{ steps.current-git-details.outputs.long }}
+  ref_tag:
+    description: "Ref tag assigned to the image (for git tags)"
+    value: ${{ steps.current-git-details.outputs.tag }}
   registry:
     description: "ECR registry for the image"
     value: ${{ steps.login-ecr.outputs.registry }}
@@ -39,15 +45,36 @@ runs:
     - name: Read current git details
       id: current-git-details
       shell: bash
+      env:
+        SECURITY_PATCH: ${{ inputs.security_patch }}
       run: |
-        echo "short=sha-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        echo "long=sha-$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "tag=tag-${{ github.ref_name }}" >> $GITHUB_OUTPUT
-        else
-          echo "tag=" >> $GITHUB_OUTPUT
+        short="sha-$(git rev-parse --short HEAD)"
+        long="sha-$(git rev-parse HEAD)"
+        tag=""
+        
+        # Add "security-patch" suffix, add random 4 characters to the end of the tag
+        if [ "$SECURITY_PATCH" == "true" ]; then
+          random_suffix="security-patch-$(shuf -i 1000-9999 -n 1)"
+          short="${short}-${random_suffix}"
+          long="${long}-${random_suffix}"
         fi
+
+        echo "short=$short" >> $GITHUB_OUTPUT
+        echo "long=$long" >> $GITHUB_OUTPUT
+
+        if git show-ref --verify refs/tags/${{ github.event.inputs.ref}} > /dev/null 2>&1; then
+          tag="tag-${{ github.event.inputs.ref }}"
+        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          tag="tag-${{ github.ref_name }}"
+        fi
+        
+        echo "tag=$tag" >> $GITHUB_OUTPUT
+
+        # Add tags to github summary
+        echo "## Tags" >> $GITHUB_STEP_SUMMARY
+        echo "Short SHA: $short" >> $GITHUB_STEP_SUMMARY
+        echo "Long SHA: $long" >> $GITHUB_STEP_SUMMARY
+        echo "Ref Tag: $tag" >> $GITHUB_STEP_SUMMARY
 
     - name: Configure Amazon ECR Credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -64,42 +91,50 @@ runs:
       id: check-image-exists
       shell: bash
       env:
+        REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: ${{ inputs.ecr_repository }}
+        SECURITY_PATCH: ${{ inputs.security_patch }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
-        REF_TAG: ${{ steps.current-git-details.outputs.tag }}
       run: |
+        echo "## Build Details" >> $GITHUB_STEP_SUMMARY
+
         REF_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$REF_TAG > /dev/null 2>&1 && echo yes || echo no)
         SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
 
+        if [[ "$SECURITY_PATCH" == "true" && ("$REF_IMAGE_EXISTS" == "yes" || "$SHORT_IMAGE_EXISTS" == "yes") ]]; then
+          echo "Error: Attempted to build a security patch image with tags that already exist. Check with DevOps if this is intended." >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
         if [[ "$REF_IMAGE_EXISTS" == "yes" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Image already exists, skipping build step"
+          echo "Image already exists, skipping build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=true" >> $GITHUB_OUTPUT
         elif [[ -n "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is not empty, and ref image doesn't exist, but short image does. Pulling short image and tagging it with ref tag."
+          echo "Ref tag is not empty, and ref image doesn't exist, but short image does. Pulling short image and tagging it with ref tag. Skipping build step." >> $GITHUB_STEP_SUMMARY
           docker pull $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG
           docker tag $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG $REGISTRY/$REPOSITORY:$REF_TAG
           docker push $REGISTRY/$REPOSITORY:$REF_TAG
-          echo "Skipping build step"
           echo "image_exists=true" >> $GITHUB_OUTPUT
         elif [[ -z "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is empty, and ref image doesn't exist, but short image does. Skipping build step"
+          echo "Ref tag is empty, and ref image doesn't exist, but short image does. Skipping build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=true" >> $GITHUB_OUTPUT
         else
-          echo "Image not found, proceeding with build step"
+          echo "Image not found, proceeding with build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Build, tag, and push docker image to Amazon ECR
+    - name: Build, tag, and push docker image to Amazon ECR 
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
-        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        REPOSITORY: ${{ inputs.ecr_repository }}
-        SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
+        BUILD_ARGS: ${{ inputs.build_args }}
         LONG_SHA_TAG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
-        BUILD_ARGS: ${{ inputs.build_args }}
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        REPOSITORY: ${{ inputs.ecr_repository }}
+        SECURITY_PATCH: ${{ inputs.security_patch }}
+        SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
       run: |
           TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
           if [ -n "${{ steps.current-git-details.outputs.tag }}" ]; then
