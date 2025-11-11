@@ -54,9 +54,9 @@ runs:
         
         # Add "security-patch" suffix, add random 4 characters to the end of the tag
         if [ "$SECURITY_PATCH" == "true" ]; then
-          random_suffix=$(shuf -i 1000-9999 -n 1)
-          short="${short}-security-patch-${random_suffix}"
-          long="${long}-security-patch-${random_suffix}"
+          random_suffix="security-patch-$(shuf -i 1000-9999 -n 1)"
+          short="${short}-${random_suffix}"
+          long="${long}-${random_suffix}"
         fi
 
         echo "short=$short" >> $GITHUB_OUTPUT
@@ -103,7 +103,7 @@ runs:
         SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
 
         if [[ "$SECURITY_PATCH" == "true" && ("$REF_IMAGE_EXISTS" == "yes" || "$SHORT_IMAGE_EXISTS" == "yes") ]]; then
-          echo "Error: Attempted to build a security patch image with tags that already exist. Please use a different ref tag." >> $GITHUB_STEP_SUMMARY
+          echo "Error: Attempted to build a security patch image with tags that already exist. Check with DevOps if this is intended." >> $GITHUB_STEP_SUMMARY
           exit 1
         fi
 
