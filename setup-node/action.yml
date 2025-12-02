@@ -16,7 +16,7 @@ inputs:
     required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
-    default: true
+    default: "true"
     required: false
   working-directory:
     description: "Working directory to restore/install"
@@ -40,7 +40,7 @@ runs:
     - name: Find node version when node-version-file is provided
       if: ${{ inputs.node-version-file != '' }}
       id: find-node-version
-      run: echo "v=$(grep 'nodejs' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      run: echo "v=$(grep 'nodejs' ${{ inputs.node-version-file }} | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
@@ -63,9 +63,9 @@ runs:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
+          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
