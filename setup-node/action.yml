@@ -1,8 +1,13 @@
 name: "Setup Node"
+description: "Setup Node for the repository"
+
 inputs:
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
-    required: true
+    required: false
+  node-version-file:
+    description: "File to find the node version to use"
+    required: false
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -20,10 +25,28 @@ inputs:
 
 runs:
   using: "composite"
+
   steps:
+    - name: Ensure one of node-version or node-version-file is provided
+      if: ${{ inputs.node-version == '' && inputs.node-version-file == '' }}
+      run: |
+        echo "Error: One of node-version or node-version-file must be provided"
+        echo "node-version: ${{ inputs.node-version }}"
+        echo "node-version-file: ${{ inputs.node-version-file }}"
+        exit 1
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Find node version when node-version-file is provided
+      if: ${{ inputs.node-version-file != '' }}
+      id: find-node-version
+      run: echo "v=$(grep 'nodejs' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
     - uses: actions/setup-node@v3
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: ${{ steps.find-node-version.outputs.v || inputs.node-version }}
 
     - name: Get yarn cache directory path
       if: ${{ inputs.install-dependencies == 'true' }}
@@ -58,6 +81,6 @@ runs:
 
     - name: Install yarn dependencies
       if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
-      run: yarn --prefer-offline --frozen-lockfile
+      run: yarn --prefer-offline --frozen-lockfile --ignore-scripts
       shell: bash
       working-directory: ${{ inputs.working-directory }}
