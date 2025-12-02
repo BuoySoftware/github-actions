@@ -2,12 +2,14 @@ name: "Setup Node"
 description: "Setup Node for the repository"
 
 inputs:
+  find-node-version:
+    default: "false"
+    description: "Whether to find the node version by using the .tool-versions file"
+    required: false
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: false
-  node-version-file:
-    description: "File to find the node version to use"
-    required: false
+
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -27,20 +29,21 @@ runs:
   using: "composite"
 
   steps:
-    - name: Ensure one of node-version or node-version-file is provided
-      if: ${{ inputs.node-version == '' && inputs.node-version-file == '' }}
+    - name: Ensure one of node-version or find-node-version is provided
+      if: ${{ inputs.node-version == '' && inputs.find-node-version == 'false' }}
       run: |
-        echo "Error: One of node-version or node-version-file must be provided"
+        echo "Error: One of node-version or find-node-version must be provided"
         echo "node-version: ${{ inputs.node-version }}"
-        echo "node-version-file: ${{ inputs.node-version-file }}"
+        echo "find-node-version: ${{ inputs.find-node-version }}"
         exit 1
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
-    - name: Find node version when node-version-file is provided
-      if: ${{ inputs.node-version-file != '' }}
+    # Could add more logic to find the node version from other files like .nvmrc, .node-version, etc.
+    - name: Find node version when find-node-version is provided
+      if: ${{ inputs.find-node-version == 'true' }}
       id: find-node-version
-      run: echo "v=$(grep 'nodejs' ${{ inputs.node-version-file }} | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      run: echo "v=$(grep 'nodejs' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
