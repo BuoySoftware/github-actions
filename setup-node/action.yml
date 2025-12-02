@@ -1,8 +1,15 @@
 name: "Setup Node"
+description: "Setup Node for the repository"
+
 inputs:
+  find-node-version:
+    default: "false"
+    description: "Whether to find the node version by using the .tool-versions file"
+    required: false
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
-    required: true
+    required: false
+
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -11,7 +18,7 @@ inputs:
     required: false
   install-dependencies:
     description: "Whether or not to install dependencies"
-    default: true
+    default: "true"
     required: false
   working-directory:
     description: "Working directory to restore/install"
@@ -20,10 +27,29 @@ inputs:
 
 runs:
   using: "composite"
+
   steps:
+    - name: Ensure one of node-version or find-node-version is provided
+      if: ${{ inputs.node-version == '' && inputs.find-node-version == 'false' }}
+      run: |
+        echo "Error: One of node-version or find-node-version must be provided"
+        echo "node-version: ${{ inputs.node-version }}"
+        echo "find-node-version: ${{ inputs.find-node-version }}"
+        exit 1
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    # Could add more logic to find the node version from other files like .nvmrc, .node-version, etc.
+    - name: Find node version when find-node-version is provided
+      if: ${{ inputs.find-node-version == 'true' }}
+      id: find-node-version
+      run: echo "v=$(grep 'nodejs' .tool-versions | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
     - uses: actions/setup-node@v3
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: ${{ steps.find-node-version.outputs.v || inputs.node-version }}
 
     - name: Get yarn cache directory path
       if: ${{ inputs.install-dependencies == 'true' }}
@@ -40,9 +66,9 @@ runs:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
           ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
+          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
@@ -58,6 +84,6 @@ runs:
 
     - name: Install yarn dependencies
       if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
-      run: yarn --prefer-offline --frozen-lockfile
+      run: yarn --prefer-offline --frozen-lockfile --ignore-scripts
       shell: bash
       working-directory: ${{ inputs.working-directory }}
