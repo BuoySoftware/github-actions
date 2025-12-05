@@ -23,7 +23,7 @@ inputs:
     required: false
     type: string
   personal_access_token:
-    description: Personal access token generated for the manifests repository
+    description: Buoy ArgoCD GitHub App PAT generated for the manifests repository
     required: true
     type: string
   working_directory:
@@ -58,8 +58,8 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
-        git config --global user.name "buoysoftware-bot"
-        git config --global user.email "buoysoftware-bot@users.noreply.github.com"
+        git config --global user.name "buoy-argocd[bot]"
+        git config --global user.email "139483569+buoy-argocd[bot]@users.noreply.github.com"
         git commit -am "Update deployment image tag for ${{ inputs.application }}-${{ inputs.environment }} to ${{ inputs.image_tag }} [skip ci]"
         git pull --rebase --autostash
         git push
