@@ -9,7 +9,10 @@ inputs:
   node-version:
     description: "Version Spec of the version to use. Examples: 12.x, 10.15.1, >=10.15.0."
     required: false
-
+  enable-corepack:
+    description: "Enable Corepack"
+    default: "false"
+    required: false
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -51,6 +54,12 @@ runs:
       with:
         node-version: ${{ steps.find-node-version.outputs.v || inputs.node-version }}
 
+    - name: Enable Corepack
+      if: ${{ inputs.enable-corepack == 'true' }}
+      run: corepack enable
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
     - name: Get yarn cache directory path
       if: ${{ inputs.install-dependencies == 'true' }}
       id: yarn-cache-dir-path
@@ -71,13 +80,13 @@ runs:
           ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
-      if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
+      if: ${{ inputs.npm_access_token }}
       run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Authenticate with Github Packages
-      if: ${{ inputs.install-dependencies == 'true' && inputs.github_packages_token }}
+      if: ${{ inputs.github_packages_token }}
       run: echo "//npm.pkg.github.com/:_authToken=${{ inputs.github_packages_token }}" > ~/.npmrc && echo "@buoysoftware:registry=https://npm.pkg.github.com/" >> .npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
