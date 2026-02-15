@@ -1,4 +1,5 @@
 name: Cache playwright browsers
+description: Cache playwright browsers by os and playwright version
 
 inputs:
   with_webkit:
@@ -13,7 +14,7 @@ runs:
   steps:
     - name: Store playwright version
       run: |
-        pw_version=$(yarn list --pattern @playwright/test --json | jq -r '.data.trees[0].name | split("@")[2]')
+        pw_version=$(jq -r '.devDependencies["@playwright/test"] // .dependencies["@playwright/test"]' package.json | tr -d '^~')
         echo "Playwright version: $pw_version"
         echo "PLAYWRIGHT_VERSION=$pw_version" >> $GITHUB_ENV
       shell: bash
