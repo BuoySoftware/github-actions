@@ -42,7 +42,6 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
-    # Could add more logic to find the node version from other files like .nvmrc, .node-version, etc.
     - name: Find node version when find-node-version is provided
       if: ${{ inputs.find-node-version == 'true' }}
       id: find-node-version
@@ -54,16 +53,22 @@ runs:
       with:
         node-version: ${{ steps.find-node-version.outputs.v || inputs.node-version }}
 
-    - name: Enable Corepack
+    - name: Enable corepack
       if: ${{ inputs.enable-corepack == 'true' }}
       run: corepack enable
       shell: bash
-      working-directory: ${{ inputs.working-directory }}
 
-    - name: Get yarn cache directory path
-      if: ${{ inputs.install-dependencies == 'true' }}
+    - name: Get yarn cache directory path (Yarn 1.x)
+      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack != 'true' }}
       id: yarn-cache-dir-path
       run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Get yarn cache directory path (Yarn Berry)
+      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack == 'true' }}
+      id: yarn-berry-cache-dir-path
+      run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
@@ -74,25 +79,31 @@ runs:
       with:
         path: |
           ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
-          ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          ${{ steps.yarn-cache-dir-path.outputs.dir || steps.yarn-berry-cache-dir-path.outputs.dir }}
         key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
           ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
 
     - name: Authenticate with private NPM package
-      if: ${{ inputs.npm_access_token }}
+      if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
       run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Authenticate with Github Packages
-      if: ${{ inputs.github_packages_token }}
+      if: ${{ inputs.install-dependencies == 'true' && inputs.github_packages_token }}
       run: echo "//npm.pkg.github.com/:_authToken=${{ inputs.github_packages_token }}" > ~/.npmrc && echo "@buoysoftware:registry=https://npm.pkg.github.com/" >> .npmrc
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
-    - name: Install yarn dependencies
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' }}
+    - name: Install yarn dependencies (Yarn 1.x)
+      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && inputs.enable-corepack != 'true' }}
       run: yarn --prefer-offline --frozen-lockfile --ignore-scripts
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Install yarn dependencies (Yarn Berry)
+      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && inputs.enable-corepack == 'true' }}
+      run: yarn install --immutable
       shell: bash
       working-directory: ${{ inputs.working-directory }}
