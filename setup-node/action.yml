@@ -103,7 +103,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && inputs.enable-corepack == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack == 'true' }}
       run: yarn install --immutable
       shell: bash
       working-directory: ${{ inputs.working-directory }}
