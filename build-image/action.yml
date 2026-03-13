@@ -13,6 +13,9 @@ inputs:
   ecr_repository:
     description: ECR repo to push image
     required: false
+  release_candidate_tag:
+    description: When provided, the platform version (e.g. v29.0) will be attached to this release candidate tag (e.g. v29.0-rc.3) found in AWS ECR.
+    required: false
   security_patch:
     default: "false"
     description: When true, signify that the build is a security patch
@@ -31,7 +34,7 @@ outputs:
   registry:
     description: "ECR registry for the image"
     value: ${{ steps.login-ecr.outputs.registry }}
-  short_sha_tag: 
+  short_sha_tag:
     description: "Short SHA tag assigned to the image"
     value: ${{ steps.current-git-details.outputs.short }}
 
@@ -51,12 +54,11 @@ runs:
         short="sha-$(git rev-parse --short HEAD)"
         long="sha-$(git rev-parse HEAD)"
         tag=""
-        
-        # Add "security-patch" suffix, add random 4 characters to the end of the tag
+
         if [ "$SECURITY_PATCH" == "true" ]; then
-          random_suffix="security-patch-$(shuf -i 1000-9999 -n 1)"
-          short="${short}-${random_suffix}"
-          long="${long}-${random_suffix}"
+          date_suffix="security-patch-$(date +%Y%m%d%H%M%S)"
+          short="${short}-${date_suffix}"
+          long="${long}-${date_suffix}"
         fi
 
         echo "short=$short" >> $GITHUB_OUTPUT
@@ -67,7 +69,7 @@ runs:
         elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
           tag="tag-${{ github.ref_name }}"
         fi
-        
+
         echo "tag=$tag" >> $GITHUB_OUTPUT
 
         # Add tags to github summary
@@ -91,6 +93,7 @@ runs:
       id: check-image-exists
       shell: bash
       env:
+        RC_TAG: ${{ inputs.release_candidate_tag && format('tag-{0}', inputs.release_candidate_tag) || '' }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: ${{ inputs.ecr_repository }}
@@ -99,32 +102,27 @@ runs:
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
 
-        REF_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$REF_TAG > /dev/null 2>&1 && echo yes || echo no)
-        SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
-
-        if [[ "$SECURITY_PATCH" == "true" && ("$REF_IMAGE_EXISTS" == "yes" || "$SHORT_IMAGE_EXISTS" == "yes") ]]; then
-          echo "Error: Attempted to build a security patch image with tags that already exist. Check with DevOps if this is intended." >> $GITHUB_STEP_SUMMARY
-          exit 1
-        fi
-
-        if [[ "$REF_IMAGE_EXISTS" == "yes" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Image already exists, skipping build step" >> $GITHUB_STEP_SUMMARY
-          echo "image_exists=true" >> $GITHUB_OUTPUT
-        elif [[ -n "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is not empty, and ref image doesn't exist, but short image does. Pulling short image and tagging it with ref tag. Skipping build step." >> $GITHUB_STEP_SUMMARY
-          docker pull $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG
-          docker tag $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG $REGISTRY/$REPOSITORY:$REF_TAG
+        if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
+          echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
+          docker pull $REGISTRY/$REPOSITORY:$RC_TAG
+          docker tag $REGISTRY/$REPOSITORY:$RC_TAG $REGISTRY/$REPOSITORY:$REF_TAG
           docker push $REGISTRY/$REPOSITORY:$REF_TAG
           echo "image_exists=true" >> $GITHUB_OUTPUT
-        elif [[ -z "$REF_TAG" && "$REF_IMAGE_EXISTS" == "no" && "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
-          echo "Ref tag is empty, and ref image doesn't exist, but short image does. Skipping build step" >> $GITHUB_STEP_SUMMARY
-          echo "image_exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "Image not found, proceeding with build step" >> $GITHUB_STEP_SUMMARY
+        elif [[ "$SECURITY_PATCH" == "true" ]]; then
+          echo "Security patch build, proceeding with build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=false" >> $GITHUB_OUTPUT
+        else
+          SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
+          if [[ "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
+            echo "Image already exists, skipping build step" >> $GITHUB_STEP_SUMMARY
+            echo "image_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image not found, proceeding with build step" >> $GITHUB_STEP_SUMMARY
+            echo "image_exists=false" >> $GITHUB_OUTPUT
+          fi
         fi
 
-    - name: Build, tag, and push docker image to Amazon ECR 
+    - name: Build, tag, and push docker image to Amazon ECR
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
@@ -136,13 +134,13 @@ runs:
         SECURITY_PATCH: ${{ inputs.security_patch }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
       run: |
-          TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
-          if [ -n "${{ steps.current-git-details.outputs.tag }}" ]; then
-            TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
-          fi
+        TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
+        if [ -n "${{ steps.current-git-details.outputs.tag }}" ]; then
+          TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
+        fi
 
-          docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG
-          docker push --all-tags $REGISTRY/$REPOSITORY
+        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG
+        docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
       if: failure() && inputs.slack_webhook_url != ''
