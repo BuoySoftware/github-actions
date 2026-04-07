@@ -68,7 +68,7 @@ runs:
     - name: Get yarn cache directory path (Yarn Berry)
       if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack == 'true' }}
       id: yarn-berry-cache-dir-path
-      run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
+      run: echo "dir=$(yarn config get cacheFolder 2>/dev/null | tail -n1)" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
