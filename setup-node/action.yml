@@ -53,20 +53,32 @@ runs:
       with:
         node-version: ${{ steps.find-node-version.outputs.v || inputs.node-version }}
 
+    - name: Detect Yarn Berry
+      id: detect-yarn-berry
+      run: |
+        dir="${{ inputs.working-directory }}"
+        dir="${dir:-.}"
+        if [ "${{ inputs.enable-corepack }}" == "true" ] || [ -f "$dir/.yarnrc.yml" ]; then
+          echo "is_berry=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_berry=false" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
     - name: Enable corepack
-      if: ${{ inputs.enable-corepack == 'true' }}
+      if: ${{ steps.detect-yarn-berry.outputs.is_berry == 'true' }}
       run: corepack enable
       shell: bash
 
     - name: Get yarn cache directory path (Yarn 1.x)
-      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack != 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry != 'true' }}
       id: yarn-cache-dir-path
       run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Get yarn cache directory path (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
       id: yarn-berry-cache-dir-path
       run: echo "dir=$(yarn config get cacheFolder 2>/dev/null | tail -n1)" >> $GITHUB_OUTPUT
       shell: bash
@@ -97,13 +109,13 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn 1.x)
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && inputs.enable-corepack != 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && steps.detect-yarn-berry.outputs.is_berry != 'true' }}
       run: yarn --prefer-offline --frozen-lockfile --ignore-scripts
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && inputs.enable-corepack == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
       run: yarn install --immutable
       shell: bash
       working-directory: ${{ inputs.working-directory }}
