@@ -75,7 +75,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Install Node
-      uses: BuoySoftware/github-actions/setup-node@main
+      uses: BuoySoftware/github-actions/setup-node@vo/detect-yarn-berry
       with:
         node-version: ${{ steps.repo_node_vers.outputs.v }}
         github_packages_token: ${{ inputs.github_packages_token }}

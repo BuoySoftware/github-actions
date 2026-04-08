@@ -58,8 +58,10 @@ runs:
       run: |
         dir="${{ inputs.working-directory }}"
         if [ "${{ inputs.enable-corepack }}" == "true" ] || [ -f "$dir/.yarnrc.yml" ]; then
+          echo "Yarn Berry detected"
           echo "is_berry=true" >> $GITHUB_OUTPUT
         else
+          echo "Yarn Classic detected"
           echo "is_berry=false" >> $GITHUB_OUTPUT
         fi
       shell: bash
