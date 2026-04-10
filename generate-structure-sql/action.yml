@@ -1,0 +1,154 @@
+name: Generate structure.sql
+description: |
+  Generates a PostgreSQL structure.sql dump from a Rails application's database schema
+  and optionally uploads it to a GitHub Release or as a workflow artifact.
+
+  Prerequisites (caller must provide):
+  - actions/checkout
+  - ruby/setup-ruby with bundler-cache: true
+  - PostgreSQL service container
+  - Bundler secret env vars (BUNDLE_GEMS__GRAPHQL__PRO, etc.)
+  - DB credential env vars (DB_USERNAME, DB_PASSWORD)
+
+inputs:
+  postgres_client_version:
+    description: "Major version of postgresql-client to install (e.g., 15, 13)"
+    required: true
+  node_version:
+    description: "Explicit Node version. If empty, reads engines.node from package.json"
+    default: ""
+    required: false
+  enable_corepack:
+    description: "Enable Corepack for Yarn Berry repos"
+    default: "false"
+    required: false
+  github_packages_token:
+    description: "Token for authenticating with GitHub Packages (@buoysoftware npm packages)"
+    required: true
+  structure_sql_path:
+    description: "Output path for the generated structure.sql file"
+    default: "db/structure.sql"
+    required: false
+  rails_env:
+    description: "RAILS_ENV for database commands"
+    default: "test"
+    required: false
+  upload_to_release:
+    description: "Upload structure.sql to the GitHub Release (requires tag push)"
+    default: "false"
+    required: false
+  upload_as_artifact:
+    description: "Upload structure.sql as a workflow artifact"
+    default: "false"
+    required: false
+  artifact_name_suffix:
+    description: "Suffix for the workflow artifact name (e.g., the ref or SHA)"
+    default: ""
+    required: false
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Read Node version from package.json
+      if: ${{ inputs.node_version == '' }}
+      id: node_version
+      run: |
+        version=$(jq -r '.engines.node' package.json)
+        if [ -z "$version" ] || [ "$version" = "null" ]; then
+          echo "::error::No engines.node found in package.json and no node_version input provided"
+          exit 1
+        fi
+        echo "✅ Node version from package.json: $version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Install Node
+      uses: BuoySoftware/github-actions/setup-node@main
+      with:
+        node-version: ${{ inputs.node_version || steps.node_version.outputs.version }}
+        enable-corepack: ${{ inputs.enable_corepack }}
+        github_packages_token: ${{ inputs.github_packages_token }}
+
+    - name: Install PostgreSQL client
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends curl ca-certificates
+        sudo install -d /usr/share/postgresql-common/pgdg
+        sudo curl -sS -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+          --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        . /etc/os-release
+        echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main" \
+          | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          postgresql-client-${{ inputs.postgres_client_version }}
+        pg_dump --version | grep -q "pg_dump (PostgreSQL) ${{ inputs.postgres_client_version }}\." \
+          || { echo "::error::Expected pg_dump ${{ inputs.postgres_client_version }}.x"; exit 1; }
+        echo "✅ PostgreSQL client ${{ inputs.postgres_client_version }} installed"
+      shell: bash
+
+    - name: Verify bundle
+      run: bundle check
+      shell: bash
+
+    - name: Set up environment variables
+      run: cp .env.sample .env
+      shell: bash
+
+    - name: Create and load database schema
+      env:
+        RAILS_ENV: ${{ inputs.rails_env }}
+      run: bundle exec rake db:create db:schema:load
+      shell: bash
+
+    - name: Generate structure.sql
+      env:
+        RAILS_ENV: ${{ inputs.rails_env }}
+      run: |
+        bundle exec rails runner \
+          "ActiveRecord::Tasks::DatabaseTasks.structure_dump(ActiveRecord::Base.connection_db_config, '${{ inputs.structure_sql_path }}')"
+      shell: bash
+
+    - name: Verify structure.sql
+      run: |
+        if [ ! -s "${{ inputs.structure_sql_path }}" ]; then
+          echo "::error::structure.sql is empty or missing"
+          exit 1
+        fi
+        echo "::group::structure.sql stats"
+        wc -l "${{ inputs.structure_sql_path }}"
+        echo "::endgroup::"
+        echo "::group::structure.sql header"
+        head -30 "${{ inputs.structure_sql_path }}"
+        echo "::endgroup::"
+        echo "✅ structure.sql generated successfully"
+      shell: bash
+
+    - name: Determine release properties
+      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      id: release_props
+      run: |
+        TAG="${GITHUB_REF_NAME}"
+        if [[ "$TAG" == *"-rc."* ]]; then
+          echo "prerelease=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+        fi
+      shell: bash
+
+    - name: Upload to GitHub Release
+      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        prerelease: ${{ steps.release_props.outputs.prerelease == 'true' }}
+        files: ${{ inputs.structure_sql_path }}
+        fail_on_unmatched_files: true
+
+    - name: Upload as workflow artifact
+      if: ${{ inputs.upload_as_artifact == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: structure-sql-${{ inputs.artifact_name_suffix || github.sha }}
+        path: ${{ inputs.structure_sql_path }}
