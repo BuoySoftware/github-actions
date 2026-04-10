@@ -71,28 +71,12 @@ runs:
       run: corepack enable
       shell: bash
 
-    - name: Get yarn cache directory path (Yarn 1.x)
-      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry != 'true' }}
-      id: yarn-cache-dir-path
-      run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-
-    - name: Get yarn cache directory path (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
-      id: yarn-berry-cache-dir-path
-      run: echo "dir=$(yarn config get cacheFolder 2>/dev/null | tail -n1)" >> $GITHUB_OUTPUT
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-
-    - name: Restore yarn cache, if exists
+    - name: Restore node_modules cache
       uses: actions/cache@v3
       if: ${{ inputs.install-dependencies == 'true' }}
       id: yarn-cache
       with:
-        path: |
-          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
-          ${{ steps.yarn-cache-dir-path.outputs.dir || steps.yarn-berry-cache-dir-path.outputs.dir }}
+        path: ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
         key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
           ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
@@ -111,7 +95,7 @@ runs:
 
     - name: Install yarn dependencies (Yarn 1.x)
       if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && steps.detect-yarn-berry.outputs.is_berry != 'true' }}
-      run: yarn --prefer-offline --frozen-lockfile --ignore-scripts
+      run: yarn --frozen-lockfile --ignore-scripts
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
