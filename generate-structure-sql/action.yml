@@ -11,11 +11,8 @@ description: |
   - DB credential env vars (DB_USERNAME, DB_PASSWORD)
 
 inputs:
-  postgres_client_version:
-    description: "Major version of postgresql-client to install (e.g., 15, 13)"
-    required: true
-  node_version:
-    description: "Explicit Node version. If empty, reads engines.node from package.json"
+  artifact_name_suffix:
+    description: "Suffix for the workflow artifact name (e.g., the ref or SHA)"
     default: ""
     required: false
   enable_corepack:
@@ -25,48 +22,39 @@ inputs:
   github_packages_token:
     description: "Token for authenticating with GitHub Packages (@buoysoftware npm packages)"
     required: true
-  structure_sql_path:
-    description: "Output path for the generated structure.sql file"
-    default: "db/structure.sql"
+  node_version:
+    description: "Explicit Node version. If empty, setup-node resolves it from .tool-versions"
+    default: ""
     required: false
+  postgres_client_version:
+    description: "Major version of postgresql-client to install (e.g., 15, 13)"
+    required: true
   rails_env:
     description: "RAILS_ENV for database commands"
     default: "test"
     required: false
-  upload_to_release:
-    description: "Upload structure.sql to the GitHub Release (requires tag push)"
-    default: "false"
+  structure_sql_path:
+    description: "Output path for the generated structure.sql file"
+    default: "db/structure.sql"
     required: false
   upload_as_artifact:
     description: "Upload structure.sql as a workflow artifact"
     default: "false"
     required: false
-  artifact_name_suffix:
-    description: "Suffix for the workflow artifact name (e.g., the ref or SHA)"
-    default: ""
+  upload_to_release:
+    description: "Upload structure.sql to the GitHub Release (requires tag push)"
+    default: "false"
     required: false
 
 runs:
   using: "composite"
 
   steps:
-    - name: Read Node version from package.json
-      if: ${{ inputs.node_version == '' }}
-      id: node_version
-      run: |
-        version=$(jq -r '.engines.node' package.json)
-        if [ -z "$version" ] || [ "$version" = "null" ]; then
-          echo "::error::No engines.node found in package.json and no node_version input provided"
-          exit 1
-        fi
-        echo "✅ Node version from package.json: $version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-      shell: bash
-
     - name: Install Node
       uses: BuoySoftware/github-actions/setup-node@main
       with:
-        node-version: ${{ inputs.node_version || steps.node_version.outputs.version }}
+        node-version: ${{ inputs.node_version }}
+        find-node-version: ${{ inputs.node_version == '' && 'true' || 'false' }}
         enable-corepack: ${{ inputs.enable_corepack }}
         github_packages_token: ${{ inputs.github_packages_token }}
 
