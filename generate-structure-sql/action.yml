@@ -7,7 +7,7 @@ description: |
   - actions/checkout
   - ruby/setup-ruby with bundler-cache: true
   - PostgreSQL service container
-  - Bundler secret env vars (BUNDLE_GEMS__GRAPHQL__PRO, etc.)
+  - Bundler secret env vars as required by the Gemfile (private gem server tokens, etc.)
   - DB credential env vars (DB_USERNAME, DB_PASSWORD)
 
 inputs:
@@ -20,7 +20,7 @@ inputs:
     default: "false"
     required: false
   github_packages_token:
-    description: "Token for authenticating with GitHub Packages (@buoysoftware npm packages)"
+    description: "Token for authenticating with GitHub Packages for private npm scopes"
     required: true
   node_version:
     description: "Explicit Node version. If empty, setup-node resolves it from .tool-versions"
