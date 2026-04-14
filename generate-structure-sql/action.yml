@@ -93,9 +93,9 @@ runs:
     - name: Generate structure.sql
       env:
         RAILS_ENV: ${{ inputs.rails_env }}
-        SCHEMA_FORMAT: sql
-        SCHEMA: ${{ inputs.structure_sql_path }}
-      run: bundle exec rake db:schema:dump
+      run: |
+        bundle exec rails runner \
+          "ActiveRecord::Tasks::DatabaseTasks.structure_dump(ActiveRecord::Base.connection_db_config, '${{ inputs.structure_sql_path }}')"
       shell: bash
 
     - name: Verify structure.sql
