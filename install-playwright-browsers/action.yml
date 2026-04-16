@@ -19,7 +19,7 @@ runs:
           // .dependencies["@playwright/test"]
           // .devDependencies["playwright"]
           // .dependencies["playwright"]
-        ' package.json | tr -d '^~')
+        pw_version=$(jq -r '.devDependencies + .dependencies | .["@playwright/test"] // .playwright' package.json | tr -d '^~')
         echo "Playwright version: $pw_version"
         echo "PLAYWRIGHT_VERSION=$pw_version" >> $GITHUB_ENV
       shell: bash
