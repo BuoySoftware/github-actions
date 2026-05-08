@@ -1,0 +1,123 @@
+name: Trivy scan
+description: "Run an Aqua Trivy scan via a SHA-pinned upstream action"
+
+inputs:
+  exit-code:
+    default: "1"
+    description: Exit code when vulnerabilities are found (e.g. "1" to fail the job)
+    required: false
+    type: string
+  format:
+    default: "table"
+    description: Output format (table, json, sarif, template, ...)
+    required: false
+    type: string
+  hide-progress:
+    default: ""
+    description: Suppress progress bar and log output
+    required: false
+    type: string
+  ignore-unfixed:
+    default: "false"
+    description: Ignore vulnerabilities without an upstream fix
+    required: false
+    type: string
+  image-ref:
+    default: ""
+    description: Container image reference (used when scan-type is "image")
+    required: false
+    type: string
+  output:
+    default: ""
+    description: Write results to a file with the specified name
+    required: false
+    type: string
+  scan-ref:
+    default: "."
+    description: Path to scan (used when scan-type is "fs" or "config")
+    required: false
+    type: string
+  scan-type:
+    default: "image"
+    description: Trivy scan type (image, fs, config, repo, ...)
+    required: false
+    type: string
+  scanners:
+    default: ""
+    description: Comma-separated scanners (vuln, secret, config, license)
+    required: false
+    type: string
+  severity:
+    default: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+    description: Comma-separated severities to report
+    required: false
+    type: string
+  trivy-config:
+    default: ""
+    description: Path to a trivy.yaml config file
+    required: false
+    type: string
+  trivyignores:
+    default: ""
+    description: Comma-separated paths to .trivyignore files
+    required: false
+    type: string
+  vuln-type:
+    default: "os,library"
+    description: Comma-separated vulnerability types (os, library)
+    required: false
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Run Trivy scan
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        exit-code: ${{ inputs.exit-code }}
+        format: ${{ inputs.format }}
+        hide-progress: ${{ inputs.hide-progress }}
+        ignore-unfixed: ${{ inputs.ignore-unfixed }}
+        image-ref: ${{ inputs.image-ref }}
+        output: ${{ inputs.output }}
+        scan-ref: ${{ inputs.scan-ref }}
+        scan-type: ${{ inputs.scan-type }}
+        scanners: ${{ inputs.scanners }}
+        severity: ${{ inputs.severity }}
+        trivy-config: ${{ inputs.trivy-config }}
+        trivyignores: ${{ inputs.trivyignores }}
+        vuln-type: ${{ inputs.vuln-type }}
+
+    - name: Publish trivy output to summary
+      if: ${{ always() && inputs.output != '' }}
+      shell: bash
+      env:
+        TRIVY_OUTPUT_FILE: ${{ inputs.output }}
+        TRIVY_SCAN_TYPE: ${{ inputs.scan-type }}
+        TRIVY_IMAGE_REF: ${{ inputs.image-ref }}
+        TRIVY_SCAN_REF: ${{ inputs.scan-ref }}
+        TRIVY_SCANNERS: ${{ inputs.scanners }}
+        TRIVY_SEVERITY: ${{ inputs.severity }}
+      run: |
+        if [[ -s "$TRIVY_OUTPUT_FILE" ]]; then
+          {
+            echo "### Trivy ${TRIVY_SCAN_TYPE} scan"
+            if [[ -n "$TRIVY_IMAGE_REF" ]]; then
+              echo "- Image: \`${TRIVY_IMAGE_REF}\`"
+            fi
+            if [[ -n "$TRIVY_SCAN_REF" && "$TRIVY_SCAN_TYPE" != "image" ]]; then
+              echo "- Path: \`${TRIVY_SCAN_REF}\`"
+            fi
+            if [[ -n "$TRIVY_SCANNERS" ]]; then
+              echo "- Scanners: ${TRIVY_SCANNERS}"
+            fi
+            if [[ -n "$TRIVY_SEVERITY" ]]; then
+              echo "- Severity: ${TRIVY_SEVERITY}"
+            fi
+            echo ""
+            echo '```'
+            cat "$TRIVY_OUTPUT_FILE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
