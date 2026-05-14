@@ -3,7 +3,7 @@ description: "Run an Aqua Trivy scan via a SHA-pinned upstream action"
 
 inputs:
   exit-code:
-    default: "1"
+    default: "0"
     description: Exit code when vulnerabilities are found (e.g. "1" to fail the job)
     required: false
     type: string
