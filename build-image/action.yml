@@ -160,3 +160,14 @@ runs:
               "text": ":x: *Docker build failed*\n*Ref:* ${{ env.AS_REF }}\n*Author:* ${{ env.AS_AUTHOR }}\n\nPlease check the CI job logs for details: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
             }]
           }
+
+    - name: Log to Datadog on failure
+      if: failure()
+      uses: masci/datadog@v2
+      with:
+        api-key: ${{ secrets.DATADOG_API_KEY }}
+        logs: |
+          - ddsource: "github-actions"
+            ddtags: "env:ci,github_author:${{ github.actor }},github_ref:${{ github.ref }},github_sha:${{ github.sha }},github_repo:${{ github.repository }},github_run_id:${{ github.run_id }}"
+            message: "{\"message\":\"[Github Action] Docker build failed on repository: ${{ github.repository }}\", \"level\":\"error\"}"
+            service: "github-actions"
