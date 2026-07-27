@@ -52,7 +52,7 @@ runs:
         token: ${{ inputs.personal_access_token }}
 
     - name: Set up Kustomize
-      uses: imranismail/setup-kustomize@v2
+      uses: imranismail/setup-kustomize@v3
 
     - name: "Update Deployment Image Tag"
       shell: bash
