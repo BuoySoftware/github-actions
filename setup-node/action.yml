@@ -57,7 +57,7 @@ runs:
       id: detect-yarn-berry
       run: |
         dir="${{ inputs.working-directory }}"
-        if [ "${{ inputs.enable-corepack }}" == "true" ] || [ -f "$dir/.yarnrc.yml" ]; then
+        if [ "${{ inputs.enable-corepack }}" == "true" ] || [ -f "${dir:-.}/.yarnrc.yml" ]; then
           echo "Yarn Berry detected"
           echo "is_berry=true" >> $GITHUB_OUTPUT
         else
