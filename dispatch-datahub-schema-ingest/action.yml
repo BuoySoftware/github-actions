@@ -1,0 +1,53 @@
+name: Dispatch DataHub schema ingest
+description: |
+  Fire a repository_dispatch event at the repository that owns the DataHub
+  ingest workflow, so it can download this app's structure.sql release asset,
+  parse it, and ingest the Postgres schema into DataHub.
+
+  Call this after the structure.sql asset has been uploaded to the GitHub
+  Release (i.e. on a tag push). The event type is pg-schema-release and the
+  client payload carries app, version, and github_repo. The receiving workflow
+  is expected to validate all three.
+
+inputs:
+  app:
+    description: "Application name to ingest the schema under in DataHub"
+    required: true
+  target_repo:
+    description: "owner/repo hosting the workflow that consumes the dispatch"
+    required: true
+  token:
+    description: "Token with permission to POST repository_dispatch on the target repo"
+    required: true
+  version:
+    description: "Release tag to ingest. Defaults to the pushed tag (github.ref_name)."
+    default: ""
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Dispatch pg-schema-release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        APP: ${{ inputs.app }}
+        VERSION: ${{ inputs.version }}
+        SOURCE_REPO: ${{ github.repository }}
+        TARGET_REPO: ${{ inputs.target_repo }}
+      run: |
+        set -euo pipefail
+        VERSION="${VERSION:-$GITHUB_REF_NAME}"
+        if [ -z "${APP}" ] || [ -z "${VERSION}" ] || [ -z "${TARGET_REPO}" ]; then
+          echo "::error::app, target_repo, and version are required"
+          exit 1
+        fi
+        curl -fsSL -X POST \
+          -H "Authorization: Bearer ${GH_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${TARGET_REPO}/dispatches" \
+          -d "$(jq -n \
+            --arg app "${APP}" \
+            --arg version "${VERSION}" \
+            --arg repo "${SOURCE_REPO}" \
+            '{event_type: "pg-schema-release", client_payload: {app: $app, version: $version, github_repo: $repo}}')"
