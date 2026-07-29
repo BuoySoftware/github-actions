@@ -113,26 +113,40 @@ runs:
         echo "✅ structure.sql generated successfully"
       shell: bash
 
-    - name: Determine release properties
-      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
-      id: release_props
-      run: |
-        TAG="${GITHUB_REF_NAME}"
-        if [[ "$TAG" == *"-rc."* ]]; then
-          echo "prerelease=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "prerelease=false" >> "$GITHUB_OUTPUT"
-        fi
-      shell: bash
-
     - name: Upload to GitHub Release
       if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.ref_name }}
-        prerelease: ${{ steps.release_props.outputs.prerelease == 'true' }}
-        files: ${{ inputs.structure_sql_path }}
-        fail_on_unmatched_files: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        TAG="${GITHUB_REF_NAME}"
+
+        # Creating or patching an existing release fails with
+        # `already_exists` on `tag_name` and takes the asset with it, so only
+        # ever attach.
+        if ! gh release view "$TAG" > /dev/null 2>&1; then
+          echo "::error::No release for $TAG; expected the release to be cut first"
+          exit 1
+        fi
+
+        gh release upload "$TAG" "${{ inputs.structure_sql_path }}" --clobber
+
+        echo "✅ structure.sql attached to release $TAG"
+      shell: bash
+
+    - name: Verify release asset
+      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        ASSET="$(basename "${{ inputs.structure_sql_path }}")"
+        # A clean exit from the upload is not proof the asset landed.
+        if ! gh release view "${GITHUB_REF_NAME}" \
+          --json assets --jq '.assets[].name' | grep -qx "$ASSET"; then
+          echo "::error::$ASSET is not attached to release ${GITHUB_REF_NAME}"
+          exit 1
+        fi
+        echo "✅ verified $ASSET is attached to release ${GITHUB_REF_NAME}"
+      shell: bash
 
     - name: Upload as workflow artifact
       if: ${{ inputs.upload_as_artifact == 'true' }}
