@@ -59,7 +59,9 @@ runs:
           args+=(--gemfile-lock "$BUNDLER_AUDIT_GEMFILE_LOCK")
         fi
         if [[ -n "$BUNDLER_AUDIT_IGNORE" ]]; then
-          # Intentional word-splitting: ignore is a space-separated list of IDs
-          args+=(--ignore $BUNDLER_AUDIT_IGNORE)
+          # Split the space-separated list of advisory IDs into array elements.
+          # read -ra splits on whitespace without glob expansion.
+          read -ra ignore_ids <<< "$BUNDLER_AUDIT_IGNORE"
+          args+=(--ignore "${ignore_ids[@]}")
         fi
         bundle-audit "${args[@]}"
