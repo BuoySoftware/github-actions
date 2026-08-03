@@ -1,0 +1,67 @@
+name: Bundler audit
+description: "Scan Gemfile.lock for vulnerable gem dependencies with bundler-audit"
+
+inputs:
+  gemfile-lock:
+    default: ""
+    description: Path to a specific Gemfile.lock (relative to working-directory)
+    required: false
+    type: string
+  ignore:
+    default: ""
+    description: Space-separated advisory IDs to ignore (e.g. "CVE-2021-1234 GHSA-xxxx")
+    required: false
+    type: string
+  update:
+    default: "true"
+    description: Update the ruby-advisory-db before checking
+    required: false
+    type: string
+  version:
+    default: ""
+    description: bundler-audit gem version to install (defaults to latest)
+    required: false
+    type: string
+  working-directory:
+    default: "."
+    description: Directory containing the Gemfile.lock to audit
+    required: false
+    type: string
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Install bundler-audit
+      shell: bash
+      env:
+        BUNDLER_AUDIT_VERSION: ${{ inputs.version }}
+      run: |
+        if [[ -n "$BUNDLER_AUDIT_VERSION" ]]; then
+          gem install bundler-audit --version "$BUNDLER_AUDIT_VERSION" --no-document
+        else
+          gem install bundler-audit --no-document
+        fi
+
+    - name: Run bundler-audit
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BUNDLER_AUDIT_GEMFILE_LOCK: ${{ inputs.gemfile-lock }}
+        BUNDLER_AUDIT_IGNORE: ${{ inputs.ignore }}
+        BUNDLER_AUDIT_UPDATE: ${{ inputs.update }}
+      run: |
+        args=(check)
+        if [[ "$BUNDLER_AUDIT_UPDATE" == "true" ]]; then
+          args+=(--update)
+        fi
+        if [[ -n "$BUNDLER_AUDIT_GEMFILE_LOCK" ]]; then
+          args+=(--gemfile-lock "$BUNDLER_AUDIT_GEMFILE_LOCK")
+        fi
+        if [[ -n "$BUNDLER_AUDIT_IGNORE" ]]; then
+          # Split the space-separated list of advisory IDs into array elements.
+          # read -ra splits on whitespace without glob expansion.
+          read -ra ignore_ids <<< "$BUNDLER_AUDIT_IGNORE"
+          args+=(--ignore "${ignore_ids[@]}")
+        fi
+        bundle-audit "${args[@]}"
