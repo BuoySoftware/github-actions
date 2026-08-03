@@ -37,9 +37,13 @@ extract_step() {
 
 # Runs the real step with a stubbed `gh` and echoes the commands it invoked, one
 # per line. Records the step's exit code for `status_of`.
+# `create_fails` models another job cutting the release in the window between the
+# existence check and the create call: the create is rejected, and a re-check then
+# finds the release present.
 run_step() {
   local tag="$1" release_exists="$2" fixture="$3"
   local step_name="${4:-Upload to GitHub Release}" attached_assets="${5:-}"
+  local create_fails="${6:-false}"
   local step
   step=$(extract_step "$step_name" "db/structure.sql")
   rm -rf "$fixture"
@@ -58,8 +62,19 @@ run_step() {
   cat > "$fixture/bin/gh" <<STUB
 #!/usr/bin/env bash
 echo "gh \$*" >> "$fixture/gh.log"
+if [ "\$1 \$2" == "release create" ]; then
+  if [ "$create_fails" == "true" ]; then
+    # Losing the race leaves the release present for the re-check that follows.
+    touch "$fixture/release_appeared"
+    echo "release already exists" >&2
+    exit 1
+  fi
+  exit 0
+fi
 if [ "\$1 \$2" == "release view" ]; then
-  if [ "$release_exists" != "true" ]; then exit 1; fi
+  if [ "$release_exists" != "true" ] && [ ! -f "$fixture/release_appeared" ]; then
+    exit 1
+  fi
   # The verify step asks for attached asset names via --json assets.
   case "\$*" in
     *--json?assets*) printf '%s\n' $attached_assets ;;
@@ -119,29 +134,49 @@ assert_uploads_idempotently() {
   printf '  ok   %s\n' "$description"
 }
 
-# An auto-created release would carry empty notes and a guessed prerelease flag,
-# so a missing one must fail rather than be created.
-assert_fails_loudly_when_release_missing() {
-  local description="$1" tag="$2"
+# Tags are pushed without a release being cut first, so a missing release must be
+# created rather than failing the run. The asset is the point of the job; a tag
+# with no release still needs its schema dump attached.
+assert_creates_release_then_attaches() {
+  local description="$1" tag="$2" expected_prerelease="$3"
   local log
   log=$(run_step "$tag" false "$FIXTURES/upload")
 
-  if grep -qE "release (create|edit) " <<< "$log"; then
-    printf '  FAIL %s (created the release instead of failing)\n' "$description"
+  if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
+    printf '  FAIL %s (step exited %s with no release present)\n' \
+      "$description" "$(status_of "$FIXTURES/upload")"
     printf '       gh calls: %s\n' "${log//$'\n'/ | }"
     failures=$((failures + 1))
     return
   fi
 
-  if grep -q "release upload " <<< "$log"; then
-    printf '  FAIL %s (attempted upload with no release present)\n' "$description"
+  if ! grep -q "release create $tag" <<< "$log"; then
+    printf '  FAIL %s (did not create the missing release)\n' "$description"
     printf '       gh calls: %s\n' "${log//$'\n'/ | }"
     failures=$((failures + 1))
     return
   fi
 
-  if [ "$(status_of "$FIXTURES/upload")" -eq 0 ]; then
-    printf '  FAIL %s (succeeded with no release present)\n' "$description"
+  # A prerelease tag must not be published as a final release, and vice versa.
+  local create_line
+  create_line=$(grep "release create $tag" <<< "$log")
+  if [ "$expected_prerelease" == "true" ]; then
+    if ! grep -q -- "--prerelease" <<< "$create_line"; then
+      printf '  FAIL %s (RC tag not marked --prerelease)\n' "$description"
+      printf '       create call: %s\n' "$create_line"
+      failures=$((failures + 1))
+      return
+    fi
+  elif grep -q -- "--prerelease" <<< "$create_line"; then
+    printf '  FAIL %s (final tag marked --prerelease)\n' "$description"
+    printf '       create call: %s\n' "$create_line"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if ! grep -q -- "release upload $tag .*--clobber" <<< "$log"; then
+    # shellcheck disable=SC2016  # backticks are prose in the message, not a subshell
+    printf '  FAIL %s (no idempotent `release upload ... --clobber` after create)\n' "$description"
     printf '       gh calls: %s\n' "${log//$'\n'/ | }"
     failures=$((failures + 1))
     return
@@ -156,8 +191,41 @@ echo "Upload to GitHub Release"
 assert_uploads_idempotently "existing release, RC tag"      "v37.0-rc.1" true
 assert_uploads_idempotently "existing release, final tag"   "v37.0"      true
 
-assert_fails_loudly_when_release_missing "missing release, RC tag"    "v38.0-rc.1"
-assert_fails_loudly_when_release_missing "missing release, final tag" "v38.0"
+assert_creates_release_then_attaches "missing release, RC tag"        "v38.0-rc.1" true
+assert_creates_release_then_attaches "missing release, final tag"     "v38.0"      false
+# Tags observed in the wild that the release-cutting step never got to.
+assert_creates_release_then_attaches "missing release, patch tag"     "v36.1"      false
+# `-rc1` without a dot is still a release candidate.
+assert_creates_release_then_attaches "missing release, dotless RC"    "v1.0-rc1"   true
+
+# Two jobs racing to cut the same release must not fail the run: the asset still
+# has somewhere to land.
+assert_survives_concurrent_create() {
+  local description="$1" tag="$2"
+  local log
+  log=$(run_step "$tag" false "$FIXTURES/upload" "Upload to GitHub Release" "" true)
+
+  if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
+    printf '  FAIL %s (step exited %s after losing the create race)\n' \
+      "$description" "$(status_of "$FIXTURES/upload")"
+    printf '       gh calls: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if ! grep -q -- "release upload $tag .*--clobber" <<< "$log"; then
+    printf '  FAIL %s (did not attach after losing the create race)\n' "$description"
+    printf '       gh calls: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
+echo
+echo "Concurrent release creation"
+assert_survives_concurrent_create "another job cut the release first" "v38.1-rc.1"
 
 assert_verify() {
   local description="$1" expected="$2" attached_assets="$3"

@@ -120,12 +120,34 @@ runs:
       run: |
         TAG="${GITHUB_REF_NAME}"
 
-        # Creating or patching an existing release fails with
-        # `already_exists` on `tag_name` and takes the asset with it, so only
-        # ever attach.
-        if ! gh release view "$TAG" > /dev/null 2>&1; then
-          echo "::error::No release for $TAG; expected the release to be cut first"
-          exit 1
+        # Tags are not always accompanied by a release, so create one when it is
+        # missing. Patching a release that already exists is what fails with
+        # `already_exists` on `tag_name` and takes the asset down with it, so an
+        # existing release is left exactly as-is.
+        if gh release view "$TAG" > /dev/null 2>&1; then
+          echo "Release $TAG already exists; attaching without modifying it"
+        else
+          # Anything carrying an `-rc` suffix is a release candidate, with or
+          # without a dot: `-rc.1` and `-rc1` are both in use.
+          PRERELEASE=""
+          if [[ "$TAG" == *-rc* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          # Notes are generated rather than left empty because humans read these
+          # release pages. A concurrent release-cutting step can win the race
+          # between the check above and this call, which is not a failure: fall
+          # through and attach to whichever release exists.
+          # shellcheck disable=SC2086  # PRERELEASE is a deliberate optional flag
+          if gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE; then
+            echo "Created release $TAG"
+          else
+            if ! gh release view "$TAG" > /dev/null 2>&1; then
+              echo "::error::Could not create or find release $TAG"
+              exit 1
+            fi
+            echo "Release $TAG appeared concurrently; attaching to it"
+          fi
         fi
 
         gh release upload "$TAG" "${{ inputs.structure_sql_path }}" --clobber
