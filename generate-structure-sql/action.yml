@@ -123,8 +123,8 @@ runs:
         # Creating or patching an existing release fails with
         # `already_exists` on `tag_name` and takes the asset with it, so only
         # ever attach.
-        if ! gh release view "$TAG" > /dev/null 2>&1; then
-          echo "::error::No release for $TAG; expected the release to be cut first"
+        if ! VIEW_OUTPUT=$(gh release view "$TAG" 2>&1); then
+          echo "::error::Could not look up release $TAG (expected it to be cut first): $VIEW_OUTPUT"
           exit 1
         fi
 
