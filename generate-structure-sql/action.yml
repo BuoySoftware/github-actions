@@ -120,12 +120,27 @@ runs:
       run: |
         TAG="${GITHUB_REF_NAME}"
 
-        # Creating or patching an existing release fails with
-        # `already_exists` on `tag_name` and takes the asset with it, so only
-        # ever attach.
-        if ! gh release view "$TAG" > /dev/null 2>&1; then
-          echo "::error::No release for $TAG; expected the release to be cut first"
-          exit 1
+        # Patching an existing release fails with `already_exists` on `tag_name`
+        # and takes the asset down with it, so an existing one is left as-is.
+        if gh release view "$TAG" > /dev/null 2>&1; then
+          echo "Release $TAG already exists; attaching without modifying it"
+        else
+          # `-rc.1` and `-rc1` are both in use.
+          PRERELEASE=""
+          if [[ "$TAG" == *-rc* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          # shellcheck disable=SC2086  # PRERELEASE is a deliberate optional flag
+          if CREATE_OUTPUT=$(gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE 2>&1); then
+            echo "Created release $TAG"
+          else
+            if ! gh release view "$TAG" > /dev/null 2>&1; then
+              echo "::error::Could not create release $TAG: $CREATE_OUTPUT"
+              exit 1
+            fi
+            echo "Release $TAG appeared concurrently; attaching to it"
+          fi
         fi
 
         gh release upload "$TAG" "${{ inputs.structure_sql_path }}" --clobber
