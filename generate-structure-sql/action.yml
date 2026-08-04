@@ -138,12 +138,16 @@ runs:
           # release pages. A concurrent release-cutting step can win the race
           # between the check above and this call, which is not a failure: fall
           # through and attach to whichever release exists.
+          # `create` carries the reason a non-race failure happened -- a missing
+          # `contents: write`, a bad token, a rate limit -- so its output is
+          # captured and reported. The re-check below only says "release not
+          # found", which the failing branch already knows.
           # shellcheck disable=SC2086  # PRERELEASE is a deliberate optional flag
-          if gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE; then
+          if CREATE_OUTPUT=$(gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE 2>&1); then
             echo "Created release $TAG"
           else
             if ! gh release view "$TAG" > /dev/null 2>&1; then
-              echo "::error::Could not create or find release $TAG"
+              echo "::error::Could not create release $TAG: $CREATE_OUTPUT"
               exit 1
             fi
             echo "Release $TAG appeared concurrently; attaching to it"
