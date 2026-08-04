@@ -120,28 +120,17 @@ runs:
       run: |
         TAG="${GITHUB_REF_NAME}"
 
-        # Tags are not always accompanied by a release, so create one when it is
-        # missing. Patching a release that already exists is what fails with
-        # `already_exists` on `tag_name` and takes the asset down with it, so an
-        # existing release is left exactly as-is.
+        # Patching an existing release fails with `already_exists` on `tag_name`
+        # and takes the asset down with it, so an existing one is left as-is.
         if gh release view "$TAG" > /dev/null 2>&1; then
           echo "Release $TAG already exists; attaching without modifying it"
         else
-          # Anything carrying an `-rc` suffix is a release candidate, with or
-          # without a dot: `-rc.1` and `-rc1` are both in use.
+          # `-rc.1` and `-rc1` are both in use.
           PRERELEASE=""
           if [[ "$TAG" == *-rc* ]]; then
             PRERELEASE="--prerelease"
           fi
 
-          # Notes are generated rather than left empty because humans read these
-          # release pages. A concurrent release-cutting step can win the race
-          # between the check above and this call, which is not a failure: fall
-          # through and attach to whichever release exists.
-          # `create` carries the reason a non-race failure happened -- a missing
-          # `contents: write`, a bad token, a rate limit -- so its output is
-          # captured and reported. The re-check below only says "release not
-          # found", which the failing branch already knows.
           # shellcheck disable=SC2086  # PRERELEASE is a deliberate optional flag
           if CREATE_OUTPUT=$(gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE 2>&1); then
             echo "Created release $TAG"

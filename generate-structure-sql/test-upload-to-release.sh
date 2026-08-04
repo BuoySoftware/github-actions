@@ -37,10 +37,8 @@ extract_step() {
 
 # Runs the real step with a stubbed `gh` and echoes the commands it invoked, one
 # per line. Records the step's exit code for `status_of`.
-# `create_fails` controls how `gh release create` behaves: `false` succeeds,
-# `true`/`race` models another job cutting the release in the window between the
-# existence check and the create call, so the create is rejected and a re-check
-# then finds the release present, and `hard` fails with no release appearing.
+# `create_fails`: `false` succeeds, `true`/`race` is rejected and then found by
+# the re-check, `hard` fails with no release appearing.
 run_step() {
   local tag="$1" release_exists="$2" fixture="$3"
   local step_name="${4:-Upload to GitHub Release}" attached_assets="${5:-}"
@@ -95,8 +93,8 @@ STUB
 
   (
     cd "$fixture" || exit 2
-    # `shell: bash` runs the body with `-e`, so mirror that here.
-    # Step output goes to a file so stdout stays free for the gh call log.
+    # `shell: bash` runs the body with `-e`, so mirror that here. Step output
+    # goes to a file so stdout stays free for the gh call log.
     PATH="$fixture/bin:$PATH" GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       bash -e -c "$step" > "$fixture/output" 2>&1
   )
@@ -242,8 +240,7 @@ echo "Concurrent release creation"
 assert_survives_concurrent_create "another job cut the release first" "v38.1-rc.1"
 
 # A create that fails for any reason other than the race ends the run, and the
-# reason `gh` gave has to reach the log. A re-check only reports "release not
-# found", so the create output is what makes the failure diagnosable.
+# reason `gh` gave has to reach the annotation.
 assert_reports_create_failure() {
   local description="$1" tag="$2"
   local log
@@ -265,10 +262,8 @@ assert_reports_create_failure() {
     return
   fi
 
-  # The reason has to sit inside the annotation, not merely somewhere in the log:
-  # only the annotation text reaches the run summary and the checks UI. Anchoring
-  # to `^::error::` on the same line also pins the exact `::error::` prefix, which
-  # a trailing space in the workflow-command form would break.
+  # Same line, not merely the same log: only annotation text reaches the run
+  # summary and the checks UI.
   if ! grep -q "^::error::.*Resource not accessible by integration" <<< "$output"; then
     printf '  FAIL %s (create failure reason not inside the ::error:: annotation)\n' \
       "$description"
