@@ -42,7 +42,7 @@ extract_step() {
 run_step() {
   local tag="$1" release_exists="$2" fixture="$3"
   local step_name="${4:-Upload to GitHub Release}" attached_assets="${5:-}"
-  local create_fails="${6:-false}"
+  local create_fails="${6:-false}" view_fails_late="${7:-false}"
   local step
   step=$(extract_step "$step_name" "db/structure.sql")
   rm -rf "$fixture"
@@ -83,7 +83,11 @@ if [ "\$1 \$2" == "release view" ]; then
   fi
   # The verify step asks for attached asset names via --json assets.
   case "\$*" in
-    *--json?assets*) printf '%s\n' $attached_assets ;;
+    *--json?assets*)
+      printf '%s\n' $attached_assets
+      # Failing after writing stdout is what pipefail exists to catch.
+      if [ "$view_fails_late" == "true" ]; then exit 1; fi
+      ;;
   esac
   exit 0
 fi
@@ -93,10 +97,12 @@ STUB
 
   (
     cd "$fixture" || exit 2
-    # `shell: bash` runs the body with `-e`, so mirror that here. Step output
-    # goes to a file so stdout stays free for the gh call log.
+    # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
+    # pipefail`; without pipefail a failing `gh` upstream of a pipe passes here
+    # and fails in CI. Step output goes to a file so stdout stays free for the
+    # gh call log.
     PATH="$fixture/bin:$PATH" GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
-      bash -e -c "$step" > "$fixture/output" 2>&1
+      bash --noprofile --norc -e -o pipefail -c "$step" > "$fixture/output" 2>&1
   )
   # Callers capture stdout via command substitution, so the status has to travel
   # through the filesystem rather than a variable the subshell would discard.
@@ -281,8 +287,9 @@ assert_reports_create_failure "reports why the create failed" "v38.2"
 
 assert_verify() {
   local description="$1" expected="$2" attached_assets="$3"
+  local view_fails_late="${4:-false}"
   run_step "v37.0-rc.1" true "$FIXTURES/verify" "Verify release asset" \
-    "$attached_assets" > /dev/null
+    "$attached_assets" false "$view_fails_late" > /dev/null
 
   local actual="pass"
   [ "$(status_of "$FIXTURES/verify")" -ne 0 ] && actual="fail"
@@ -306,6 +313,9 @@ assert_verify "fails when no assets are attached"         fail ""
 assert_verify "fails when only other assets are attached" fail "checksums.txt"
 # Guards against a substring match letting a near-miss name through.
 assert_verify "fails on a partial name match"             fail "structure.sql.gz"
+# `gh` failing after it has written the asset name is only caught with pipefail,
+# which the runner sets and this harness has to match.
+assert_verify "fails when gh dies mid-pipeline"           fail "structure.sql" true
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%d assertion(s) failed\n' "$failures"
