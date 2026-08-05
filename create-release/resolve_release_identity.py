@@ -249,7 +249,7 @@ def main() -> None:
     # ordinal is what decides it, so a suffix that merely contains "rc" is not a
     # candidate.
     identity = {
-        "latest": str(not claims_latest(tags, pushed)).lower(),
+        "latest": str(claims_latest(tags, pushed)).lower(),
         "notes_start": base.name if base else "",
         "prerelease": str(not pushed.is_final).lower(),
     }
