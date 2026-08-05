@@ -20,8 +20,9 @@ description: |
   - A token with permission to list tags and to create and edit releases.
 
   No checkout, database, language runtime or dependency install is needed: the
-  action reads the tag list over the API and calls the release API. Keeping that
-  failure surface small is what makes it safe to gate other jobs on this one.
+  tag list and the commit each tag names both come from the tag listing, and the
+  release is created over the API. Keeping that failure surface small is what
+  makes it safe to gate other jobs on this one.
 
   Ranking runs on the interpreter the runner already carries, using the standard
   library only. A third-party import would add a setup step to every caller.

@@ -27,9 +27,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import resolve_release_identity as identity
 
 
-def parsed(name: str) -> identity.Tag:
-    """The parsed tag, failing the test when it is not a version tag."""
-    tag = identity.Tag.parse(name)
+def parsed(name: str, commit: str = "") -> identity.Tag:
+    """The parsed tag, failing the test when it is not a version tag.
+
+    Without an explicit commit the tag gets one derived from its name, so tags
+    sit on distinct commits unless a case deliberately co-locates them.
+    """
+    tag = identity.Tag.parse(name, commit or f"sha-{name}")
     if tag is None:
         raise AssertionError(f"{name} should parse as a version tag")
     return tag
@@ -40,18 +44,13 @@ def tags(*names: str) -> list[identity.Tag]:
 
     Names that are not version tags are dropped, as they are from the listing.
     """
-    candidates = [identity.Tag.parse(name) for name in names]
+    candidates = [identity.Tag.parse(name, f"sha-{name}") for name in names]
     return sorted((tag for tag in candidates if tag), key=lambda tag: tag.rank)
 
 
 def notes_base(pushed: str, *names: str) -> str | None:
-    """The notes base, with each tag on its own commit.
-
-    Tags sharing a commit is the exception, so it is set up explicitly by the
-    cases that need it rather than reached for here through real `git`.
-    """
-    with mock.patch.object(identity, "commit_of", lambda tag: f"sha-{tag.name}"):
-        base = identity.notes_base(tags(*names), parsed(pushed))
+    """The notes base, with each tag on its own commit."""
+    base = identity.notes_base(tags(*names), parsed(pushed))
     return base.name if base else None
 
 
@@ -190,14 +189,12 @@ class TestPublishedBoundary(unittest.TestCase):
 
     def boundary(self, *names, commits=None):
         commits = commits or {}
-        with mock.patch.object(
-            identity, "commit_of", lambda tag: commits.get(tag.name, f"sha-{tag.name}")
-        ):
-            return (
-                boundary.name
-                if (boundary := identity.published_boundary(tags(*names)))
-                else None
-            )
+        line = sorted(
+            (parsed(name, commits.get(name, f"sha-{name}")) for name in names),
+            key=lambda tag: tag.rank,
+        )
+        found = identity.published_boundary(line)
+        return found.name if found else None
 
     def test_prefers_the_final_when_it_names_the_last_candidates_commit(self):
         # The final is the published boundary of that line.
@@ -215,24 +212,23 @@ class TestPublishedBoundary(unittest.TestCase):
             self.boundary("v2.1.0-rc.1", "v2.1.0", "v2.1.0-rc.2"), "v2.1.0-rc.2"
         )
 
-    def test_falls_back_to_the_candidate_when_the_final_cannot_be_resolved(self):
-        # A partial fetch can leave a tag object that names no commit. Guessing
-        # the final is the boundary would silently widen the notes.
+    def test_falls_back_to_the_candidate_when_the_final_names_no_commit(self):
+        # The listing can omit a commit. Guessing the final is the boundary would
+        # silently widen the notes.
         self.assertEqual(
-            self.boundary("v2.1.0-rc.1", "v2.1.0", commits={"v2.1.0": None}),
+            self.boundary("v2.1.0-rc.1", "v2.1.0", commits={"v2.1.0": ""}),
             "v2.1.0-rc.1",
         )
 
-    def test_an_unresolvable_tag_reads_as_naming_no_commit(self):
-        # `git rev-list` exits non-zero on a tag object it cannot resolve. Reading
-        # its empty output as a commit would compare two blanks equal and pick the
-        # final.
-        with mock.patch.object(
-            identity.subprocess,
-            "run",
-            lambda *a, **k: mock.Mock(returncode=128, stdout=""),
-        ):
-            self.assertIsNone(identity.commit_of(parsed("v2.1.0")))
+    def test_two_tags_with_no_commit_are_not_treated_as_co_located(self):
+        # Two unknown commits compare equal as strings, which would pick the final
+        # on no evidence at all.
+        self.assertEqual(
+            self.boundary(
+                "v2.1.0-rc.1", "v2.1.0", commits={"v2.1.0": "", "v2.1.0-rc.1": ""}
+            ),
+            "v2.1.0-rc.1",
+        )
 
     def test_a_line_with_only_a_final(self):
         self.assertEqual(self.boundary("v2.1.0"), "v2.1.0")
@@ -292,7 +288,12 @@ class TestCollectTags(unittest.TestCase):
             page = int(argv[2].split("&page=")[1])
             calls.append(page)
             names = pages[page - 1] if page <= len(pages) else []
-            return mock.Mock(returncode=0, stdout="".join(f"{n}\n" for n in names))
+            # The listing is name and commit, tab-separated, as the `--jq` asks
+            # for. A stub emitting bare names would let a parser that ignored the
+            # commit pass here and drop it in the real run.
+            return mock.Mock(
+                returncode=0, stdout="".join(f"{n}\tsha-{n}\n" for n in names)
+            )
 
         with mock.patch.object(identity.subprocess, "run", fake_run):
             collected = identity.collect_tags("owner/repo", max_pages, parsed(pushed))

@@ -51,21 +51,27 @@ class Tag:
     The numbers are held by position rather than by name, because what each
     position means differs between repositories while the ranking does not. An
     absent third number counts as zero, so `v2.2` and `v2.2.0` are one version.
+
+    `commit` is the commit the tag names, which decides which tag a completed
+    version line published. It comes from the tag listing, which resolves an
+    annotated tag to its commit rather than reporting the tag object.
     """
 
     name: str
     version: Version
     ordinal: int
+    commit: str = ""
 
     @classmethod
-    def parse(cls, name: str) -> "Tag | None":
+    def parse(cls, name: str, commit: str = "") -> "Tag | None":
         """The parsed tag, or None when `name` is not a version tag."""
         match = TAG_PATTERN.match(name)
         if not match:
             return None
         first, second, third, ordinal = match.groups()
         version: Version = (int(first), int(second), int(third or 0))
-        return cls(name, version, FINAL if ordinal is None else int(ordinal))
+        ranked = FINAL if ordinal is None else int(ordinal)
+        return cls(name, version, ranked, commit)
 
     @property
     def is_final(self) -> bool:
@@ -93,6 +99,11 @@ def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
     excluding those would make the notes base depend on who cut the surrounding
     tags.
 
+    Each tag is listed with the commit it names, so the commit a version line
+    published is decided from the same response the ranking comes from. Asking
+    `git` for it instead would require the caller to have checked the repository
+    out, and would answer "no commit" for every tag when they had not.
+
     Yields None at each page boundary, so the caller can decide whether it has
     seen enough without this function knowing what it is looking for.
     """
@@ -103,7 +114,7 @@ def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
                 "api",
                 f"repos/{repository}/tags?per_page=100&page={page}",
                 "--jq",
-                ".[].name",
+                ".[] | [.name, .commit.sha] | @tsv",
             ],
             capture_output=True,
             text=True,
@@ -112,12 +123,13 @@ def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
         if result.returncode != 0:
             fail(f"Could not list tags for {repository} (page {page})")
 
-        names = [line for line in result.stdout.splitlines() if line]
-        if not names:
+        rows = [line for line in result.stdout.splitlines() if line]
+        if not rows:
             # The listing ran out, so every tag there is has been seen.
             return
-        for name in names:
-            tag = Tag.parse(name)
+        for row in rows:
+            name, _, commit = row.partition("\t")
+            tag = Tag.parse(name, commit)
             if tag:
                 yield tag
         yield None
@@ -153,17 +165,6 @@ def collect_tags(repository: str, max_pages: int, pushed: Tag) -> list[Tag]:
     return sorted(tags, key=lambda tag: tag.rank)
 
 
-def commit_of(tag: Tag) -> str | None:
-    """The commit a tag names, or None when it names none or cannot be resolved."""
-    result = subprocess.run(
-        ["git", "rev-list", "-n", "1", tag.name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.strip() or None
-
-
 def published_boundary(version_tags: list[Tag]) -> Tag | None:
     """The tag a version line published, or None when it holds no tags.
 
@@ -175,6 +176,9 @@ def published_boundary(version_tags: list[Tag]) -> Tag | None:
     The two are compared by the commit each names, not by version: a final always
     outranks its own candidates, so ranking alone cannot tell a published
     boundary from one cut before the version finished.
+
+    A tag whose commit is unknown cannot be shown to be the published boundary,
+    so the line's last candidate stands.
     """
     candidates = [tag for tag in version_tags if not tag.is_final]
     finals = [tag for tag in version_tags if tag.is_final]
@@ -185,8 +189,7 @@ def published_boundary(version_tags: list[Tag]) -> Tag | None:
         return candidates[-1]
 
     final, candidate = finals[-1], candidates[-1]
-    final_commit = commit_of(final)
-    if final_commit and final_commit == commit_of(candidate):
+    if final.commit and final.commit == candidate.commit:
         return final
     return candidate
 

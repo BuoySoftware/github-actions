@@ -120,10 +120,16 @@ if [ "\$1" == "api" ]; then
       case "\$2" in *page=*) page="\${2##*page=}"; page="\${page%%&*}" ;; esac
       per_page=$tags_per_page
       start=\$(( (page - 1) * per_page + 1 ))
+      # Each row is the tag and the commit it names, tab-separated, as the step's
+      # \`--jq\` asks for. A fixture written as \`tag:sha\` pins the commit so two
+      # tags can be co-located; without one the commit is derived from the name.
+      #
       # awk reverses the list the same way everywhere; \`tail -r\` is BSD-only and
       # \`tac\` is GNU-only, so either one passes on one platform and fails on the other.
-      cut -d: -f1 "$fixture/tags" \
-        | awk '{ line[NR] = \$0 } END { for (i = NR; i > 0; i--) print line[i] }' \
+      awk -F: '{ name = \$1; sha = (\$2 == "" ? "sha-" \$1 : \$2)
+                 if (sha == "!") { sha = "" }
+                 line[NR] = name "\t" sha }
+               END { for (i = NR; i > 0; i--) print line[i] }' "$fixture/tags" \
         | sed -n "\${start},\$((start + per_page - 1))p"
       exit 0
       ;;
