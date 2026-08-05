@@ -7,6 +7,40 @@ on:
       - main
 
 jobs:
+  typescript-tests:
+    name: TypeScript tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: create-release/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: create-release
+
+      - name: Typecheck and test
+        run: |
+          npx tsc --noEmit
+          npx tsc -p tsconfig.test.json
+          node --test dist-test/test/
+        working-directory: create-release
+        shell: bash
+
+      # A bundle rebuilt from source must match the committed one. Without this
+      # the tests pass against source while the action ships something else.
+      - name: The committed bundle matches its source
+        run: |
+          npx rollup -c
+          git diff --exit-code dist/
+        working-directory: create-release
+        shell: bash
+
   shell-tests:
     name: Shell tests
     runs-on: ubuntu-latest
