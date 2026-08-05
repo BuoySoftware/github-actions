@@ -145,14 +145,12 @@ def collect_tags(repository, max_pages, pushed):
 
 
 def commit_of(tag):
-    """The commit a tag names, or None when it cannot be resolved."""
+    """The commit a tag names, or None when it names none or cannot be resolved."""
     result = subprocess.run(
         ["git", "rev-list", "-n", "1", tag.name],
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
-        return None
     return result.stdout.strip() or None
 
 

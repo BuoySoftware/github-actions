@@ -391,16 +391,24 @@ class TestMain(unittest.TestCase):
     def test_refuses_a_tag_that_is_not_a_version(self):
         # The action is triggered by a tag push, and not every tag pushed is a
         # release. Answering for one would publish a release for it.
+        #
+        # The message is asserted, not just the exit code: a run that carried the
+        # unparsed tag onwards would fail at the tag listing instead and report a
+        # network problem for what is really a tag that was never a release.
         for tag in ("latest", "20240131.1", "v1", "release-1.0"):
             with self.subTest(tag=tag):
-                with mock.patch.dict(
-                    identity.os.environ,
-                    {"TAG": tag, "GITHUB_REPOSITORY": "owner/repo", "MAX_PAGES": "20"},
-                    clear=False,
-                ):
-                    with self.assertRaises(SystemExit) as raised:
-                        identity.main()
+                environment = {
+                    "TAG": tag,
+                    "GITHUB_REPOSITORY": "owner/repo",
+                    "MAX_PAGES": "20",
+                }
+                with mock.patch.dict(identity.os.environ, environment, clear=False):
+                    with mock.patch("sys.stderr", io.StringIO()) as errors:
+                        with self.assertRaises(SystemExit) as raised:
+                            identity.main()
+
                 self.assertEqual(raised.exception.code, 1)
+                self.assertIn("is not a version tag", errors.getvalue())
 
 
 if __name__ == "__main__":
