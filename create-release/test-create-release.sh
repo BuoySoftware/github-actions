@@ -111,8 +111,11 @@ if [ "\$1" == "api" ]; then
       case "\$2" in *page=*) page="\${2##*page=}"; page="\${page%%&*}" ;; esac
       per_page=$tags_per_page
       start=\$(( (page - 1) * per_page + 1 ))
-      cut -d: -f1 "$fixture/tags" | tail -r 2>/dev/null | sed -n "\${start},\$((start + per_page - 1))p" \
-        || cut -d: -f1 "$fixture/tags" | tac | sed -n "\${start},\$((start + per_page - 1))p"
+      # awk reverses the list the same way everywhere; \`tail -r\` is BSD-only and
+      # \`tac\` is GNU-only, so either one passes on one platform and fails on the other.
+      cut -d: -f1 "$fixture/tags" \
+        | awk '{ line[NR] = \$0 } END { for (i = NR; i > 0; i--) print line[i] }' \
+        | sed -n "\${start},\$((start + per_page - 1))p"
       exit 0
       ;;
   esac
