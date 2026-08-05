@@ -23,13 +23,16 @@ description: |
   action reads the tag list over the API and calls the release API. Keeping that
   failure surface small is what makes it safe to gate other jobs on this one.
 
-  Version tags are `v<major>.<minor>` or `v<major>.<minor>.<patch>`, optionally
-  followed by a release-candidate ordinal (`-rc.4` or `-rc4`) and optionally by
-  a trailing suffix (`-mega`, `-pltf`, `-someone_test`). A missing patch counts
-  as zero, so `v2.2` and `v2.2.0` are the same version. Trailing suffixes carry
-  no ordering information and are ignored when comparing versions. The leading
-  `v` is required, which is what keeps a retired `YYYYMMDD.N` tag scheme from
-  being read as a set of very high version numbers.
+  A version tag carries two or three dot-separated numbers, optionally followed
+  by a release-candidate ordinal (`-rc.4` or `-rc4`) and optionally by a trailing
+  suffix. The numbers are ranked left to right, and nothing here depends on what
+  a repository calls them, so the two-part and three-part schemes both in use are
+  ordered correctly.
+
+  An absent third number counts as zero, so `v2.2` and `v2.2.0` are one version.
+  Trailing suffixes carry no ordering information. The leading `v` is required,
+  which keeps a retired all-digit tag scheme from being read as very high
+  versions.
 
 inputs:
   token:
@@ -61,25 +64,28 @@ runs:
       run: |
         set -euo pipefail
 
-        # A version's identity is the tuple (major, minor, patch, rc). `rc` is
-        # -1 for a final release so that finals sort above every candidate of
-        # the same version. Anything after the ordinal is a collision-avoidance
-        # suffix and takes no part in ordering.
+        # A version's identity is its dot-separated numbers plus a
+        # release-candidate ordinal. The numbers are held by position rather than
+        # by name, because what each position means differs between repositories
+        # while the ranking does not. `rc` is -1 for a final release so that
+        # finals sort above every candidate of the same version. Anything after
+        # the ordinal is a collision-avoidance suffix and takes no part in
+        # ordering.
         #
         # The leading `v` is required. It is what separates the current scheme
         # from the retired `YYYYMMDD.N` one, whose tags parse as versions with a
-        # major in the millions and would outrank every real release.
+        # leading number in the millions and would outrank every real release.
         #
-        # Emits "<major> <minor> <patch> <rc>" for a version tag, nothing for a
+        # Emits "<first> <second> <third> <rc>" for a version tag, nothing for a
         # tag that is not one.
         parse_tag() {
           local tag="$1"
           [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)(\.([0-9]+))?(-rc\.?([0-9]+))?(-[A-Za-z0-9_.-]+)?$ ]] || return 1
-          local major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}"
-          local patch="${BASH_REMATCH[4]:-0}" rc="${BASH_REMATCH[6]:-}"
+          local first="${BASH_REMATCH[1]}" second="${BASH_REMATCH[2]}"
+          local third="${BASH_REMATCH[4]:-0}" rc="${BASH_REMATCH[6]:-}"
           # A tag with no ordinal is a final. -1 keeps it above its candidates
           # without a special case at every comparison.
-          printf '%s %s %s %s\n' "$major" "$minor" "$patch" "${rc:--1}"
+          printf '%s %s %s %s\n' "$first" "$second" "$third" "${rc:--1}"
         }
 
         # Zero-padded so a plain lexical sort orders the tuple numerically, which
@@ -95,14 +101,16 @@ runs:
         }
 
         pushed_fields=$(parse_tag "$TAG") || {
-          echo "::error::$TAG is not a version tag; expected v<major>.<minor>[.<patch>][-rc<n>][-suffix]"
+          echo "::error::$TAG is not a version tag; expected two or three" \
+            "dot-separated numbers, as v1.2 or v1.2.3, optionally followed by" \
+            "-rc<n> and a suffix"
           exit 1
         }
-        # shellcheck disable=SC2086  # deliberate word splitting of the tuple
+        # shellcheck disable=SC2086  # deliberate word splitting of the fields
         set -- $pushed_fields
-        pushed_major="$1" pushed_minor="$2" pushed_patch="$3" pushed_rc="$4"
-        pushed_key=$(sort_key "$pushed_major" "$pushed_minor" "$pushed_patch" "$pushed_rc")
-        pushed_version=$(sort_key "$pushed_major" "$pushed_minor" "$pushed_patch" 0)
+        pushed_first="$1" pushed_second="$2" pushed_third="$3" pushed_rc="$4"
+        pushed_key=$(sort_key "$pushed_first" "$pushed_second" "$pushed_third" "$pushed_rc")
+        pushed_version=$(sort_key "$pushed_first" "$pushed_second" "$pushed_third" 0)
 
         # Tags come from the API, so the action needs no checkout. Identity is
         # decided by comparing the pushed tag against others, and a shallow
