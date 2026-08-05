@@ -13,8 +13,11 @@ order, matching the API: a function that trusts the order it receives fails here
 Usage: python3 create-release/test_resolve_release_identity.py
 """
 
+import io
 import os
+import pathlib
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -147,7 +150,9 @@ class TestNotesBase(unittest.TestCase):
         self.assertEqual(notes_base("v36.1", *self.MAIN), "v36.0-rc.7-mega")
 
     def test_ignores_versions_above_the_pushed_tag(self):
-        self.assertEqual(notes_base("v36.0-rc.1", "v36.0-rc.1", "v37.0", "v35.3"), "v35.3")
+        self.assertEqual(
+            notes_base("v36.0-rc.1", "v36.0-rc.1", "v37.0", "v35.3"), "v35.3"
+        )
 
     def test_crosses_a_gap_where_a_version_was_never_cut(self):
         self.assertEqual(notes_base("v36.0-rc.1", *self.MAIN), "v35.3")
@@ -195,7 +200,9 @@ class TestPublishedBoundary(unittest.TestCase):
         )
 
     def test_prefers_the_last_candidate_when_the_final_sits_behind_it(self):
-        self.assertEqual(self.boundary("v2.1.0-rc.1", "v2.1.0", "v2.1.0-rc.2"), "v2.1.0-rc.2")
+        self.assertEqual(
+            self.boundary("v2.1.0-rc.1", "v2.1.0", "v2.1.0-rc.2"), "v2.1.0-rc.2"
+        )
 
     def test_falls_back_to_the_candidate_when_the_final_cannot_be_resolved(self):
         # A partial fetch can leave a tag object that names no commit. Guessing
@@ -204,6 +211,17 @@ class TestPublishedBoundary(unittest.TestCase):
             self.boundary("v2.1.0-rc.1", "v2.1.0", commits={"v2.1.0": None}),
             "v2.1.0-rc.1",
         )
+
+    def test_an_unresolvable_tag_reads_as_naming_no_commit(self):
+        # `git rev-list` exits non-zero on a tag object it cannot resolve. Reading
+        # its empty output as a commit would compare two blanks equal and pick the
+        # final.
+        with mock.patch.object(
+            identity.subprocess,
+            "run",
+            lambda *a, **k: mock.Mock(returncode=128, stdout=""),
+        ):
+            self.assertIsNone(identity.commit_of(identity.Tag.parse("v2.1.0")))
 
     def test_a_line_with_only_a_final(self):
         self.assertEqual(self.boundary("v2.1.0"), "v2.1.0")
@@ -279,7 +297,9 @@ class TestCollectTags(unittest.TestCase):
         self.assertEqual(collected, ["v8.0", "v9.0"])
 
     def test_keeps_paging_while_every_tag_is_at_or_above_the_pushed_version(self):
-        collected, calls = self.collect([["v9.0-rc.1"], ["v9.0-rc.2"], ["v8.0"]], "v9.0")
+        collected, calls = self.collect(
+            [["v9.0-rc.1"], ["v9.0-rc.2"], ["v8.0"]], "v9.0"
+        )
         self.assertEqual(calls, [1, 2, 3])
         self.assertIn("v8.0", collected)
 
@@ -302,7 +322,9 @@ class TestCollectTags(unittest.TestCase):
 
     def test_fails_when_the_listing_errors(self):
         with mock.patch.object(
-            identity.subprocess, "run", lambda *a, **k: mock.Mock(returncode=1, stdout="")
+            identity.subprocess,
+            "run",
+            lambda *a, **k: mock.Mock(returncode=1, stdout=""),
         ):
             with self.assertRaises(SystemExit):
                 identity.collect_tags("owner/repo", 20, identity.Tag.parse("v1.0"))
@@ -310,8 +332,75 @@ class TestCollectTags(unittest.TestCase):
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts
         # v100 above v99.
-        collected, _ = self.collect([["v100.0", "v99.0", "v99.0-rc.1", "v98.0"]], "v100.0")
+        collected, _ = self.collect(
+            [["v100.0", "v99.0", "v99.0-rc.1", "v98.0"]], "v100.0"
+        )
         self.assertEqual(collected, ["v98.0", "v99.0-rc.1", "v99.0", "v100.0"])
+
+
+class TestMain(unittest.TestCase):
+    """The step outputs, and the tags the run refuses to answer for."""
+
+    def run_main(self, tag, listing, output_path):
+        env = {
+            "TAG": tag,
+            "GITHUB_REPOSITORY": "owner/repo",
+            "MAX_PAGES": "20",
+            "GITHUB_OUTPUT": str(output_path),
+        }
+
+        def fake_run(argv, **kwargs):
+            if argv[0] == "git":
+                return mock.Mock(returncode=0, stdout=f"sha-{argv[-1]}\n")
+            page = int(argv[2].split("&page=")[1])
+            names = listing if page == 1 else []
+            return mock.Mock(returncode=0, stdout="".join(f"{n}\n" for n in names))
+
+        # main() reports the identity it resolved on stdout, which is the step's
+        # log rather than anything under test here.
+        with mock.patch.dict(identity.os.environ, env, clear=False):
+            with mock.patch.object(identity.subprocess, "run", fake_run):
+                with mock.patch("sys.stdout", io.StringIO()):
+                    identity.main()
+
+        values = {}
+        for line in output_path.read_text().splitlines():
+            key, _, value = line.partition("=")
+            values[key] = value
+        return values
+
+    def test_writes_the_three_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "outputs"
+            output.touch()
+            values = self.run_main("v37.0", ["v37.0", "v36.0", "v35.0"], output)
+
+        self.assertEqual(
+            values, {"latest": "true", "notes_start": "v36.0", "prerelease": "false"}
+        )
+
+    def test_a_candidate_is_a_prerelease_and_declines_latest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "outputs"
+            output.touch()
+            values = self.run_main("v37.0-rc.1", ["v37.0-rc.1", "v36.0"], output)
+
+        self.assertEqual(values["prerelease"], "true")
+        self.assertEqual(values["latest"], "false")
+
+    def test_refuses_a_tag_that_is_not_a_version(self):
+        # The action is triggered by a tag push, and not every tag pushed is a
+        # release. Answering for one would publish a release for it.
+        for tag in ("latest", "20240131.1", "v1", "release-1.0"):
+            with self.subTest(tag=tag):
+                with mock.patch.dict(
+                    identity.os.environ,
+                    {"TAG": tag, "GITHUB_REPOSITORY": "owner/repo", "MAX_PAGES": "20"},
+                    clear=False,
+                ):
+                    with self.assertRaises(SystemExit) as raised:
+                        identity.main()
+                self.assertEqual(raised.exception.code, 1)
 
 
 if __name__ == "__main__":
