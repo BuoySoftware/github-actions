@@ -26,14 +26,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_release_identity as identity
 
+_DERIVE = object()
 
-def parsed(name: str, commit: str = "") -> identity.Tag:
+
+def parsed(name: str, commit: object = _DERIVE) -> identity.Tag:
     """The parsed tag, failing the test when it is not a version tag.
 
-    Without an explicit commit the tag gets one derived from its name, so tags
-    sit on distinct commits unless a case deliberately co-locates them.
+    Passing no commit derives one from the name, so tags sit on distinct commits
+    unless a case co-locates them. Passing `""` means the listing gave no commit,
+    which is a case in its own right and must not be confused with the default.
     """
-    tag = identity.Tag.parse(name, commit or f"sha-{name}")
+    resolved = f"sha-{name}" if commit is _DERIVE else str(commit)
+    tag = identity.Tag.parse(name, resolved)
     if tag is None:
         raise AssertionError(f"{name} should parse as a version tag")
     return tag
@@ -52,6 +56,23 @@ def notes_base(pushed: str, *names: str) -> str | None:
     """The notes base, with each tag on its own commit."""
     base = identity.notes_base(tags(*names), parsed(pushed))
     return base.name if base else None
+
+
+def listing(argv: list[str], names: list[str]) -> str:
+    """What `gh api` prints for a page of tags, given the `--jq` it was passed.
+
+    The fields come from the filter rather than being assumed, so a step that
+    stopped asking for the commit gets a listing without one -- as it would from
+    the real API.
+    """
+    fields = argv[argv.index("--jq") + 1]
+    rows = []
+    for name in names:
+        if ".commit.sha" in fields:
+            rows.append(f"{name}\tsha-{name}")
+        else:
+            rows.append(name)
+    return "".join(f"{row}\n" for row in rows)
 
 
 def claims_latest(pushed: str, *names: str) -> bool:
@@ -190,7 +211,7 @@ class TestPublishedBoundary(unittest.TestCase):
     def boundary(self, *names, commits=None):
         commits = commits or {}
         line = sorted(
-            (parsed(name, commits.get(name, f"sha-{name}")) for name in names),
+            (parsed(name, commits.get(name, _DERIVE)) for name in names),
             key=lambda tag: tag.rank,
         )
         found = identity.published_boundary(line)
@@ -288,16 +309,48 @@ class TestCollectTags(unittest.TestCase):
             page = int(argv[2].split("&page=")[1])
             calls.append(page)
             names = pages[page - 1] if page <= len(pages) else []
-            # The listing is name and commit, tab-separated, as the `--jq` asks
-            # for. A stub emitting bare names would let a parser that ignored the
-            # commit pass here and drop it in the real run.
-            return mock.Mock(
-                returncode=0, stdout="".join(f"{n}\tsha-{n}\n" for n in names)
-            )
+            return mock.Mock(returncode=0, stdout=listing(argv, names))
 
         with mock.patch.object(identity.subprocess, "run", fake_run):
             collected = identity.collect_tags("owner/repo", max_pages, parsed(pushed))
         return [tag.name for tag in collected], calls
+
+    def test_carries_the_commit_each_tag_names(self):
+        # The commit decides which tag a completed version line published, so it
+        # has to survive the fetch. A step that stopped asking the listing for it
+        # would still rank correctly and pick the wrong notes base.
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            page = int(argv[2].split("&page=")[1])
+            names = ["v2.0", "v2.0-rc.1", "v1.0"] if page == 1 else []
+            return mock.Mock(returncode=0, stdout=listing(argv, names))
+
+        with mock.patch.object(identity.subprocess, "run", fake_run):
+            collected = identity.collect_tags("owner/repo", 20, parsed("v3.0"))
+
+        self.assertTrue(
+            all(tag.commit for tag in collected),
+            f"every tag needs a commit, got {[(t.name, t.commit) for t in collected]}",
+        )
+
+    def test_asks_the_listing_for_the_commit(self):
+        # Reading it from `git` instead would need the repository checked out, and
+        # would answer "no commit" for every tag when it was not.
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append(argv)
+            return mock.Mock(returncode=0, stdout="")
+
+        with mock.patch.object(identity.subprocess, "run", fake_run):
+            identity.collect_tags("owner/repo", 20, parsed("v3.0"))
+
+        self.assertTrue(seen, "the listing was never fetched")
+        for argv in seen:
+            self.assertEqual(argv[0], "gh", f"shelled out to {argv[0]}")
+            self.assertIn(".commit.sha", argv[argv.index("--jq") + 1])
 
     def test_stops_after_the_page_holding_a_lower_version(self):
         # The base is in the pushed tag's own version or the highest below it, so
@@ -353,7 +406,7 @@ class TestCollectTags(unittest.TestCase):
 class TestMain(unittest.TestCase):
     """The step outputs, and the tags the run refuses to answer for."""
 
-    def run_main(self, tag, listing, output_path):
+    def run_main(self, tag, tag_names, output_path):
         env = {
             "TAG": tag,
             "GITHUB_REPOSITORY": "owner/repo",
@@ -362,11 +415,9 @@ class TestMain(unittest.TestCase):
         }
 
         def fake_run(argv, **kwargs):
-            if argv[0] == "git":
-                return mock.Mock(returncode=0, stdout=f"sha-{argv[-1]}\n")
             page = int(argv[2].split("&page=")[1])
-            names = listing if page == 1 else []
-            return mock.Mock(returncode=0, stdout="".join(f"{n}\n" for n in names))
+            names = tag_names if page == 1 else []
+            return mock.Mock(returncode=0, stdout=listing(argv, names))
 
         # main() reports the identity it resolved on stdout, which is the step's
         # log rather than anything under test here.
