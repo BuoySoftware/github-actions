@@ -7,6 +7,31 @@ on:
       - main
 
 jobs:
+  python-checks:
+    name: Python format, lint and types
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v9
+
+      # Development tooling only. What ships is the script, run by the
+      # interpreter the runner already carries, so nothing here is installed at
+      # job time.
+      #
+      # The tools are pinned so a new release cannot fail a run that changed
+      # nothing.
+      - name: Format, lint and typecheck
+        env:
+          RUFF: ruff@0.16.1
+          TY: ty@0.0.66
+        run: |
+          uvx "$RUFF" format --check create-release/
+          uvx "$RUFF" check create-release/
+          uvx "$TY" check
+        shell: bash
+
   python-tests:
     name: Python tests
     runs-on: ubuntu-latest
@@ -14,8 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # No setup-python step: actions here run on the interpreter the runner
-      # already has, so the tests run on it too.
+      # No setup-python step, and deliberately not uv's interpreter: the tests
+      # run on the same python3 the action gets on a runner, so a version
+      # difference fails here rather than at release time.
       - name: Run Python tests
         run: |
           shopt -s nullglob

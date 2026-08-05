@@ -14,72 +14,80 @@ Usage: python3 create-release/test_resolve_release_identity.py
 """
 
 import io
-import os
-import pathlib
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 # The script under test sits beside this file, which is not on the path when the
 # tests are run from the repository root as CI does.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_release_identity as identity
 
 
-def tags(*names):
-    """The named tags, ranked, as collect_tags would return them."""
-    parsed = [identity.Tag.parse(name) for name in names]
-    return sorted((tag for tag in parsed if tag), key=lambda tag: tag.rank)
+def parsed(name: str) -> identity.Tag:
+    """The parsed tag, failing the test when it is not a version tag."""
+    tag = identity.Tag.parse(name)
+    if tag is None:
+        raise AssertionError(f"{name} should parse as a version tag")
+    return tag
 
 
-def notes_base(pushed, *names):
+def tags(*names: str) -> list[identity.Tag]:
+    """The named tags, ranked, as collect_tags would return them.
+
+    Names that are not version tags are dropped, as they are from the listing.
+    """
+    candidates = [identity.Tag.parse(name) for name in names]
+    return sorted((tag for tag in candidates if tag), key=lambda tag: tag.rank)
+
+
+def notes_base(pushed: str, *names: str) -> str | None:
     """The notes base, with each tag on its own commit.
 
     Tags sharing a commit is the exception, so it is set up explicitly by the
     cases that need it rather than reached for here through real `git`.
     """
     with mock.patch.object(identity, "commit_of", lambda tag: f"sha-{tag.name}"):
-        base = identity.notes_base(tags(*names), identity.Tag.parse(pushed))
+        base = identity.notes_base(tags(*names), parsed(pushed))
     return base.name if base else None
 
 
-def claims_latest(pushed, *names):
-    return identity.claims_latest(tags(*names), identity.Tag.parse(pushed))
+def claims_latest(pushed: str, *names: str) -> bool:
+    return identity.claims_latest(tags(*names), parsed(pushed))
 
 
 class TestParse(unittest.TestCase):
     def test_accepts_two_and_three_part_versions(self):
-        self.assertEqual(identity.Tag.parse("v3.0").version, (3, 0, 0))
-        self.assertEqual(identity.Tag.parse("v2.2.1").version, (2, 2, 1))
+        self.assertEqual(parsed("v3.0").version, (3, 0, 0))
+        self.assertEqual(parsed("v2.2.1").version, (2, 2, 1))
 
     def test_absent_third_number_counts_as_zero(self):
         # `v2.2` and `v2.2.0` name one version, so a repository that writes both
         # shapes does not get two release lines out of them.
-        self.assertEqual(
-            identity.Tag.parse("v2.2").version, identity.Tag.parse("v2.2.0").version
-        )
+        self.assertEqual(parsed("v2.2").version, parsed("v2.2.0").version)
 
     def test_accepts_dotted_and_dotless_ordinals(self):
-        self.assertEqual(identity.Tag.parse("v1.0-rc.4").ordinal, 4)
-        self.assertEqual(identity.Tag.parse("v1.0-rc4").ordinal, 4)
+        self.assertEqual(parsed("v1.0-rc.4").ordinal, 4)
+        self.assertEqual(parsed("v1.0-rc4").ordinal, 4)
 
     def test_a_tag_with_no_ordinal_is_final(self):
-        self.assertTrue(identity.Tag.parse("v1.0").is_final)
-        self.assertFalse(identity.Tag.parse("v1.0-rc.1").is_final)
+        self.assertTrue(parsed("v1.0").is_final)
+        self.assertFalse(parsed("v1.0-rc.1").is_final)
 
     def test_suffixes_carry_no_ordering_information(self):
         # Suffixes exist to avoid collisions, so two tags differing only by one
         # rank equally.
         self.assertEqual(
-            identity.Tag.parse("v36.0-rc.6-mega").rank,
-            identity.Tag.parse("v36.0-rc.6").rank,
+            parsed("v36.0-rc.6-mega").rank,
+            parsed("v36.0-rc.6").rank,
         )
 
     def test_rejects_a_suffix_that_merely_contains_rc(self):
         # An ordinal is what makes a candidate. A branch name is not one.
-        self.assertTrue(identity.Tag.parse("v1.0-rcsomething").is_final)
+        self.assertTrue(parsed("v1.0-rcsomething").is_final)
 
     def test_requires_the_leading_v(self):
         # The retired `YYYYMMDD.N` scheme parses as versions with a leading
@@ -93,11 +101,10 @@ class TestParse(unittest.TestCase):
                 self.assertIsNone(identity.Tag.parse(name))
 
     def test_finals_outrank_every_candidate_of_their_version(self):
-        final = identity.Tag.parse("v1.0")
+        final = parsed("v1.0")
         for ordinal in ("1", "9", "999999"):
             with self.subTest(ordinal=ordinal):
-                candidate = identity.Tag.parse(f"v1.0-rc.{ordinal}")
-                self.assertGreater(final.rank, candidate.rank)
+                self.assertGreater(final.rank, parsed(f"v1.0-rc.{ordinal}").rank)
 
     def test_ranks_numbers_left_to_right(self):
         ordered = ["v2.2.0", "v2.2.1", "v2.3.0", "v3.0.0", "v10.0.0", "v100.0.0"]
@@ -186,7 +193,11 @@ class TestPublishedBoundary(unittest.TestCase):
         with mock.patch.object(
             identity, "commit_of", lambda tag: commits.get(tag.name, f"sha-{tag.name}")
         ):
-            return identity.published_boundary(tags(*names)).name
+            return (
+                boundary.name
+                if (boundary := identity.published_boundary(tags(*names)))
+                else None
+            )
 
     def test_prefers_the_final_when_it_names_the_last_candidates_commit(self):
         # The final is the published boundary of that line.
@@ -221,7 +232,7 @@ class TestPublishedBoundary(unittest.TestCase):
             "run",
             lambda *a, **k: mock.Mock(returncode=128, stdout=""),
         ):
-            self.assertIsNone(identity.commit_of(identity.Tag.parse("v2.1.0")))
+            self.assertIsNone(identity.commit_of(parsed("v2.1.0")))
 
     def test_a_line_with_only_a_final(self):
         self.assertEqual(self.boundary("v2.1.0"), "v2.1.0")
@@ -284,9 +295,7 @@ class TestCollectTags(unittest.TestCase):
             return mock.Mock(returncode=0, stdout="".join(f"{n}\n" for n in names))
 
         with mock.patch.object(identity.subprocess, "run", fake_run):
-            collected = identity.collect_tags(
-                "owner/repo", max_pages, identity.Tag.parse(pushed)
-            )
+            collected = identity.collect_tags("owner/repo", max_pages, parsed(pushed))
         return [tag.name for tag in collected], calls
 
     def test_stops_after_the_page_holding_a_lower_version(self):
@@ -329,7 +338,7 @@ class TestCollectTags(unittest.TestCase):
             ),
             self.assertRaises(SystemExit),
         ):
-            identity.collect_tags("owner/repo", 20, identity.Tag.parse("v1.0"))
+            identity.collect_tags("owner/repo", 20, parsed("v1.0"))
 
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts
@@ -375,7 +384,7 @@ class TestMain(unittest.TestCase):
 
     def test_writes_the_three_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = pathlib.Path(directory) / "outputs"
+            output = Path(directory) / "outputs"
             output.touch()
             values = self.run_main("v37.0", ["v37.0", "v36.0", "v35.0"], output)
 
@@ -385,7 +394,7 @@ class TestMain(unittest.TestCase):
 
     def test_a_candidate_is_a_prerelease_and_declines_latest(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = pathlib.Path(directory) / "outputs"
+            output = Path(directory) / "outputs"
             output.touch()
             values = self.run_main("v37.0-rc.1", ["v37.0-rc.1", "v36.0"], output)
 

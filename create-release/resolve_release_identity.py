@@ -13,6 +13,10 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import NoReturn
 
 # Two or three dot-separated numbers, an optional release-candidate ordinal, and
 # an optional collision-avoidance suffix.
@@ -35,7 +39,12 @@ TAG_PATTERN = re.compile(
 # highest possible ordinal.
 FINAL = sys.maxsize
 
+# The dot-separated numbers, and the whole tag's position in the ordering.
+Version = tuple[int, int, int]
+Rank = tuple[Version, int]
 
+
+@dataclass(frozen=True)
 class Tag:
     """A parsed version tag, ordered by its numbers and then its ordinal.
 
@@ -44,36 +53,35 @@ class Tag:
     absent third number counts as zero, so `v2.2` and `v2.2.0` are one version.
     """
 
-    def __init__(self, name, version, ordinal):
-        self.name = name
-        self.version = version
-        self.ordinal = ordinal
+    name: str
+    version: Version
+    ordinal: int
 
     @classmethod
-    def parse(cls, name):
+    def parse(cls, name: str) -> "Tag | None":
         """The parsed tag, or None when `name` is not a version tag."""
         match = TAG_PATTERN.match(name)
         if not match:
             return None
         first, second, third, ordinal = match.groups()
-        version = (int(first), int(second), int(third or 0))
+        version: Version = (int(first), int(second), int(third or 0))
         return cls(name, version, FINAL if ordinal is None else int(ordinal))
 
     @property
-    def is_final(self):
+    def is_final(self) -> bool:
         return self.ordinal == FINAL
 
     @property
-    def rank(self):
+    def rank(self) -> Rank:
         return (self.version, self.ordinal)
 
 
-def fail(message):
+def fail(message: str) -> NoReturn:
     print(f"::error::{message}", file=sys.stderr)
     sys.exit(1)
 
 
-def list_tags(repository, max_pages):
+def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
     """Every version tag in the repository, a page at a time.
 
     Tags come from the API, so the action needs no checkout. Identity is decided
@@ -120,7 +128,7 @@ def list_tags(repository, max_pages):
     )
 
 
-def collect_tags(repository, max_pages, pushed):
+def collect_tags(repository: str, max_pages: int, pushed: Tag) -> list[Tag]:
     """The tags needed to decide `pushed`'s identity, in ascending order.
 
     Paging stops after the page on which a version strictly below the pushed
@@ -145,7 +153,7 @@ def collect_tags(repository, max_pages, pushed):
     return sorted(tags, key=lambda tag: tag.rank)
 
 
-def commit_of(tag):
+def commit_of(tag: Tag) -> str | None:
     """The commit a tag names, or None when it names none or cannot be resolved."""
     result = subprocess.run(
         ["git", "rev-list", "-n", "1", tag.name],
@@ -156,7 +164,7 @@ def commit_of(tag):
     return result.stdout.strip() or None
 
 
-def published_boundary(version_tags):
+def published_boundary(version_tags: list[Tag]) -> Tag | None:
     """The tag a version line published, or None when it holds no tags.
 
     Its final when the final names the same commit as the line's last candidate,
@@ -183,7 +191,7 @@ def published_boundary(version_tags):
     return candidate
 
 
-def notes_base(tags, pushed):
+def notes_base(tags: list[Tag], pushed: Tag) -> Tag | None:
     """The tag the release notes should be generated from, or None for no base.
 
     Without a base the create step omits the boundary rather than passing an
@@ -209,7 +217,7 @@ def notes_base(tags, pushed):
     return published_boundary([tag for tag in tags if tag.version == highest_lower])
 
 
-def claims_latest(tags, pushed):
+def claims_latest(tags: list[Tag], pushed: Tag) -> bool:
     """Whether the pushed tag should be published as "Latest".
 
     "Latest" is publish-order by default, which is what put an older release
@@ -221,7 +229,7 @@ def claims_latest(tags, pushed):
     return not any(tag.is_final and tag.rank > pushed.rank for tag in tags)
 
 
-def main():
+def main() -> None:
     name = os.environ["TAG"]
     repository = os.environ["GITHUB_REPOSITORY"]
     max_pages = int(os.environ["MAX_PAGES"])
@@ -246,7 +254,7 @@ def main():
         "prerelease": str(not pushed.is_final).lower(),
     }
 
-    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+    with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         for key, value in identity.items():
             print(f"{key}={value}", file=output)
 
