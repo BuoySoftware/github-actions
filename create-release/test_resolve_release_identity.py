@@ -25,7 +25,7 @@ from unittest import mock
 # tests are run from the repository root as CI does.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import resolve_release_identity as identity  # noqa: E402
+import resolve_release_identity as identity
 
 
 def tags(*names):
@@ -321,13 +321,15 @@ class TestCollectTags(unittest.TestCase):
             self.collect([["v9.0-rc.1"]] * 3, "v9.0", max_pages=2)
 
     def test_fails_when_the_listing_errors(self):
-        with mock.patch.object(
-            identity.subprocess,
-            "run",
-            lambda *a, **k: mock.Mock(returncode=1, stdout=""),
+        with (
+            mock.patch.object(
+                identity.subprocess,
+                "run",
+                lambda *a, **k: mock.Mock(returncode=1, stdout=""),
+            ),
+            self.assertRaises(SystemExit),
         ):
-            with self.assertRaises(SystemExit):
-                identity.collect_tags("owner/repo", 20, identity.Tag.parse("v1.0"))
+            identity.collect_tags("owner/repo", 20, identity.Tag.parse("v1.0"))
 
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts
@@ -358,10 +360,12 @@ class TestMain(unittest.TestCase):
 
         # main() reports the identity it resolved on stdout, which is the step's
         # log rather than anything under test here.
-        with mock.patch.dict(identity.os.environ, env, clear=False):
-            with mock.patch.object(identity.subprocess, "run", fake_run):
-                with mock.patch("sys.stdout", io.StringIO()):
-                    identity.main()
+        with (
+            mock.patch.dict(identity.os.environ, env, clear=False),
+            mock.patch.object(identity.subprocess, "run", fake_run),
+            mock.patch("sys.stdout", io.StringIO()),
+        ):
+            identity.main()
 
         values = {}
         for line in output_path.read_text().splitlines():
@@ -402,10 +406,12 @@ class TestMain(unittest.TestCase):
                     "GITHUB_REPOSITORY": "owner/repo",
                     "MAX_PAGES": "20",
                 }
-                with mock.patch.dict(identity.os.environ, environment, clear=False):
-                    with mock.patch("sys.stderr", io.StringIO()) as errors:
-                        with self.assertRaises(SystemExit) as raised:
-                            identity.main()
+                with (
+                    mock.patch.dict(identity.os.environ, environment, clear=False),
+                    mock.patch("sys.stderr", io.StringIO()) as errors,
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    identity.main()
 
                 self.assertEqual(raised.exception.code, 1)
                 self.assertIn("is not a version tag", errors.getvalue())

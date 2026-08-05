@@ -99,6 +99,7 @@ def list_tags(repository, max_pages):
             ],
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             fail(f"Could not list tags for {repository} (page {page})")
@@ -150,6 +151,7 @@ def commit_of(tag):
         ["git", "rev-list", "-n", "1", tag.name],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.stdout.strip() or None
 
