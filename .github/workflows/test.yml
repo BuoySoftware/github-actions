@@ -7,6 +7,32 @@ on:
       - main
 
 jobs:
+  python-tests:
+    name: Python tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # No setup-python step: actions here run on the interpreter the runner
+      # already has, so the tests run on it too.
+      - name: Run Python tests
+        run: |
+          shopt -s nullglob
+          tests=(*/test_*.py)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::No Python test scripts found"
+            exit 1
+          fi
+          status=0
+          for test in "${tests[@]}"; do
+            echo "::group::$test"
+            python3 "$test" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+        shell: bash
+
   shell-tests:
     name: Shell tests
     runs-on: ubuntu-latest

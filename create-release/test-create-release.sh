@@ -32,12 +32,21 @@ failures=0
 # it lands on the named step regardless of step order. Steps take their values
 # from `env:`, so there are no `${{ }}` expressions left in the body to
 # substitute -- the harness sets the same variables the runner would.
+#
+# A step whose command is short enough to sit on the `run:` line itself is
+# extracted from there. Both forms are read out of action.yml rather than
+# restated, so a step that changes shape is still the step under test.
 extract_step() {
-  local step_name="$1"
-  awk "/name: $step_name/,/shell: bash/" "$ACTION" \
-    | sed -n '/run: |/,/shell: bash/p' \
-    | sed '1d;$d' \
-    | sed 's/^        //'
+  local step_name="$1" step
+  step=$(awk "/name: $step_name/,/shell: bash/" "$ACTION")
+
+  if grep -q 'run: |' <<< "$step"; then
+    sed -n '/run: |/,/shell: bash/p' <<< "$step" \
+      | sed '1d;$d' \
+      | sed 's/^        //'
+  else
+    sed -n 's/^      run: //p' <<< "$step"
+  fi
 }
 
 # Writes the `git` and `gh` stubs into a fixture directory.
@@ -184,9 +193,12 @@ run_step() {
     # pipefail`; without pipefail a failing stub upstream of a pipe passes here
     # and fails in CI. Step output goes to a file so stdout stays free for the
     # call log.
+    # GITHUB_ACTION_PATH is the action's own directory, so a step invoking a
+    # script there runs the shipped copy rather than one staged for the test.
     # shellcheck disable=SC2086  # step_env is a deliberate list of assignments
     env PATH="$fixture/bin:$PATH" GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       GITHUB_OUTPUT="$fixture/outputs" TAG="$tag" \
+      GITHUB_ACTION_PATH="$(dirname "$ACTION")" \
       GITHUB_REPOSITORY="owner/repo" MAX_PAGES="${MAX_PAGES_OVERRIDE:-20}" \
       $step_env \
       bash --noprofile --norc -e -o pipefail -c "$step" \
