@@ -28,7 +28,15 @@ jobs:
         run: |
           npx tsc --noEmit
           npx tsc -p tsconfig.test.json
-          node --test dist-test/test/
+          # A glob that matched nothing would exit 0 and report a passing job that
+          # ran no tests.
+          shopt -s nullglob globstar
+          tests=(dist-test/**/*.test.js)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::No compiled tests found"
+            exit 1
+          fi
+          node --test "${tests[@]}"
         working-directory: create-release
         shell: bash
 
