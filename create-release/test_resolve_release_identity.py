@@ -13,6 +13,7 @@ order, matching the API: a function that trusts the order it receives fails here
 Usage: python3 create-release/test_resolve_release_identity.py
 """
 
+import contextlib
 import io
 import sys
 import tempfile
@@ -393,6 +394,22 @@ class TestCollectTags(unittest.TestCase):
             self.assertRaises(SystemExit),
         ):
             identity.collect_tags("owner/repo", 20, parsed("v1.0"))
+
+    def test_names_the_missing_cli_rather_than_crashing(self):
+        # Self-hosted runner images do not necessarily carry gh, and the raw
+        # FileNotFoundError traceback reads like a scripting bug rather than a
+        # missing prerequisite.
+        def no_gh(*args, **kwargs):
+            raise FileNotFoundError("gh")
+
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(identity.subprocess, "run", no_gh),
+            contextlib.redirect_stderr(stderr),
+            self.assertRaises(SystemExit),
+        ):
+            identity.collect_tags("owner/repo", 20, parsed("v1.0"))
+        self.assertIn("gh CLI is not on PATH", stderr.getvalue())
 
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts

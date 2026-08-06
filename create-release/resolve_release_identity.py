@@ -108,18 +108,27 @@ def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
     seen enough without this function knowing what it is looking for.
     """
     for page in range(1, max_pages + 1):
-        result = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{repository}/tags?per_page=100&page={page}",
-                "--jq",
-                ".[] | [.name, .commit.sha] | @tsv",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{repository}/tags?per_page=100&page={page}",
+                    "--jq",
+                    ".[] | [.name, .commit.sha] | @tsv",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            # Self-hosted runner images do not necessarily carry the CLI that
+            # GitHub-hosted runners preinstall, and the bare "command not
+            # found" that would otherwise surface reads like a scripting bug.
+            fail(
+                "The gh CLI is not on PATH. This action lists tags and manages "
+                "the release with gh, so the runner image must provide it."
+            )
         if result.returncode != 0:
             fail(f"Could not list tags for {repository} (page {page})")
 

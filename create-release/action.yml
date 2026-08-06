@@ -18,6 +18,8 @@ description: |
   Prerequisites (caller must provide):
   - A tag push. The pushed tag is read from github.ref_name.
   - A token with permission to list tags and to create and edit releases.
+  - The gh CLI and python3 on PATH. GitHub-hosted runners carry both;
+    self-hosted images must provide them.
 
   No checkout, database, language runtime or dependency install is needed: the
   tag list and the commit each tag names both come from the tag listing, and the
