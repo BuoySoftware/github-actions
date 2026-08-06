@@ -57,12 +57,17 @@ class Tag:
     `commit` is the commit the tag names, which decides which tag a completed
     version line published. It comes from the tag listing, which resolves an
     annotated tag to its commit rather than reporting the tag object.
+
+    `explicit_patch` records whether the tag wrote its third number, which is
+    what tells a live three-number scheme's tags from a retired two-number
+    scheme's.
     """
 
     name: str
     version: Version
     ordinal: int
     commit: str = ""
+    explicit_patch: bool = True
 
     @classmethod
     def parse(cls, name: str, commit: str = "") -> "Tag | None":
@@ -73,7 +78,7 @@ class Tag:
         first, second, third, ordinal = match.groups()
         version: Version = (int(first), int(second), int(third or 0))
         ranked = FINAL if ordinal is None else int(ordinal)
-        return cls(name, version, ranked, commit)
+        return cls(name, version, ranked, commit, third is not None)
 
     @property
     def is_final(self) -> bool:
@@ -138,13 +143,20 @@ def collect_tags(repository: str, max_pages: int, pushed: Tag) -> list[Tag]:
     v100 above v99. Tag dates are not consulted either, since tags are routinely
     cut out of chronological order, nor is commit ancestry: most release tags are
     unreachable from the default branch.
+
+    A three-number push sees only three-number tags. A repository that writes
+    all three numbers has retired any two-number scheme it used before, and the
+    retired tags overlap the live scheme's numbers — both counted through the
+    same majors — so they are dropped entirely rather than ranked. Dropped tags
+    do not bound paging either, or the base could be cut off behind one. A
+    two-number push filters nothing.
     """
     tags = []
     for tag in list_tags(repository, max_pages):
         if tag is None:
             if any(seen.version < pushed.version for seen in tags):
                 break
-        else:
+        elif not pushed.explicit_patch or tag.explicit_patch:
             tags.append(tag)
     return sorted(tags, key=lambda tag: tag.rank)
 

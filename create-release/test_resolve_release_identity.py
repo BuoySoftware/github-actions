@@ -109,6 +109,13 @@ class TestParse(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIsNone(identity.Tag.parse(name))
 
+    def test_records_whether_the_third_number_was_written(self):
+        # `v2.2` and `v2.2.0` rank identically, but the shape still matters: it
+        # is what tells a retired two-number scheme's tags from a live
+        # three-number scheme's.
+        self.assertFalse(parsed("v2.2").explicit_patch)
+        self.assertTrue(parsed("v2.2.0").explicit_patch)
+
     def test_finals_outrank_every_candidate_of_their_version(self):
         final = parsed("v1.0")
         for ordinal in ("1", "9", "999999"):
@@ -397,6 +404,31 @@ class TestCollectTags(unittest.TestCase):
             identity.collect_tags("owner/repo", 20, parsed("v1.0"))
         self.assertIn("Bad gateway", stderr.getvalue())
 
+    def test_a_three_number_push_drops_the_retired_two_number_scheme(self):
+        # A repository that moved from vN.M to vX.Y.Z counted through the same
+        # majors twice, so the retired tags overlap the live ones — an old v9.1
+        # outranks every new v2.x final, and an old v2.2 collides with the new
+        # v2.2.0 line outright. Ranking cannot tell them apart; the shape can.
+        collected, _ = self.collect(
+            [["v35.5", "v9.1", "v2.2-rc1", "v2.1.1", "v2.1.0"]], "v2.1.1"
+        )
+        self.assertEqual(collected, ["v2.1.0", "v2.1.1"])
+
+    def test_a_two_number_push_keeps_every_tag(self):
+        # A repository on two-number versions never retired anything; stray
+        # three-number tags there are ordinary candidates.
+        collected, _ = self.collect([["v36.1", "v1.0.0", "v35.5"]], "v36.1")
+        self.assertEqual(collected, ["v1.0.0", "v35.5", "v36.1"])
+
+    def test_dropped_tags_do_not_bound_paging(self):
+        # The retired v2.1 sits below the pushed version, but stopping on it
+        # would cut the listing off before the live v2.1.1 the base needs.
+        collected, calls = self.collect(
+            [["v2.2.0-rc.2", "v2.1"], ["v2.1.1"], ["v1.9"]], "v2.2.0-rc.2"
+        )
+        self.assertEqual(calls, [1, 2])
+        self.assertEqual(collected, ["v2.1.1", "v2.2.0-rc.2"])
+
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts
         # v100 above v99.
@@ -455,6 +487,40 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(values["prerelease"], "true")
         self.assertEqual(values["latest"], "false")
+
+    def test_a_semver_push_is_immune_to_the_retired_scheme(self):
+        # The retired scheme's finals rank above every new final and its `v2.2`
+        # tags collide with the live v2.2.x line; both would poison the outputs
+        # if they were compared. Shapes mirror the real population: dotless
+        # ordinals are the retired scheme's habit.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "outputs"
+            output.touch()
+            values = self.run_main(
+                "v2.1.1", ["v35.5", "v9.1", "v2.2-rc1", "v2.1.1", "v2.1.0"], output
+            )
+
+        self.assertEqual(
+            values,
+            {"latest": "true", "notes_start": "v2.1.0", "prerelease": "false"},
+        )
+
+    def test_a_candidate_never_bases_on_the_retired_scheme(self):
+        # Old v2.2-rc1 and new v2.2.0-rc.1 parse to the same rank on different
+        # commits, seventeen months apart.
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "outputs"
+            output.touch()
+            values = self.run_main(
+                "v2.2.0-rc.2",
+                ["v2.2.0-rc.2", "v2.2.0-rc.1", "v2.2-rc1", "v2.2", "v2.1.1"],
+                output,
+            )
+
+        self.assertEqual(
+            values,
+            {"latest": "false", "notes_start": "v2.2.0-rc.1", "prerelease": "true"},
+        )
 
     def test_refuses_a_tag_that_is_not_a_version(self):
         # The action is triggered by a tag push, and not every tag pushed is a
