@@ -2,21 +2,23 @@
 """Derive a release's identity from the repository's tag list.
 
 Reads the pushed tag from TAG and the repository from GITHUB_REPOSITORY, lists
-tags over the API with `gh`, and writes `latest`, `notes_start` and `prerelease`
-to $GITHUB_OUTPUT.
+tags over the REST API, and writes `latest`, `notes_start` and `prerelease` to
+$GITHUB_OUTPUT.
 
 Runs on the system interpreter with the standard library only, so the action
-needs no checkout, runtime setup or dependency install.
+needs no checkout, runtime setup, CLI or dependency install.
 """
 
 import os
 import re
-import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
 from typing import NoReturn
+
+import github_api
 
 # Two or three dot-separated numbers, an optional release-candidate ordinal, and
 # an optional collision-avoidance suffix.
@@ -108,37 +110,20 @@ def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
     seen enough without this function knowing what it is looking for.
     """
     for page in range(1, max_pages + 1):
-        try:
-            result = subprocess.run(
-                [
-                    "gh",
-                    "api",
-                    f"repos/{repository}/tags?per_page=100&page={page}",
-                    "--jq",
-                    ".[] | [.name, .commit.sha] | @tsv",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except FileNotFoundError:
-            # Self-hosted runner images do not necessarily carry the CLI that
-            # GitHub-hosted runners preinstall, and the bare "command not
-            # found" that would otherwise surface reads like a scripting bug.
+        status, entries = github_api.request(
+            "GET", f"/repos/{repository}/tags?per_page=100&page={page}"
+        )
+        if status != HTTPStatus.OK:
             fail(
-                "The gh CLI is not on PATH. This action lists tags and manages "
-                "the release with gh, so the runner image must provide it."
+                f"Could not list tags for {repository} (page {page}): "
+                f"{github_api.error_message(entries)}"
             )
-        if result.returncode != 0:
-            fail(f"Could not list tags for {repository} (page {page})")
 
-        rows = [line for line in result.stdout.splitlines() if line]
-        if not rows:
+        if not entries:
             # The listing ran out, so every tag there is has been seen.
             return
-        for row in rows:
-            name, _, commit = row.partition("\t")
-            tag = Tag.parse(name, commit)
+        for entry in entries:
+            tag = Tag.parse(entry["name"], entry["commit"]["sha"])
             if tag:
                 yield tag
         yield None

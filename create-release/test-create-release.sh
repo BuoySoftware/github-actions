@@ -1,29 +1,26 @@
 #!/usr/bin/env bash
 #
-# Tests the shell-owned surface of action.yml: the "Create or update release"
-# step, the wiring from the identity script to step outputs, and the invariants
-# the file itself must hold.
+# Tests the shipped step bodies in action.yml against a local stand-in GitHub
+# API, plus the invariants the file itself must hold.
 #
 # The release-identity rules (notes base, prerelease, latest, paging) are unit
-# tested in test_resolve_release_identity.py against the script directly; they
-# are not restated here. What only this suite covers: the step bodies as
-# shipped, extracted from action.yml and run under the runner's shell flags, so
-# a change to the wiring or the API calls is exercised rather than a copy that
-# can drift.
+# tested against the scripts directly; they are not restated here. What only
+# this suite covers: the step bodies as shipped, extracted from action.yml and
+# run under the runner's shell flags, against real HTTP -- so the wiring from
+# env to script to API to step outputs is exercised with nothing stubbed on
+# PATH.
 #
-# When the release already exists, correcting its flags by a call that also
-# names the tag is rejected outright and takes any attached asset down with it.
-# The create/edit split, the race with a concurrent job, and failure reporting
-# all live in bash and are covered only here.
-#
-# `gh` is stubbed on PATH: it serves the tag listing a page at a time,
-# newest-first as the API does, and records the commands each step would issue.
+# Assertions read the requests the steps actually made from the stand-in's
+# log. The step's exit code alone cannot distinguish a field-scoped flag
+# correction from a re-create that would have destroyed the release's assets;
+# the request log can.
 #
 # Usage: ./create-release/test-create-release.sh
 
 set -uo pipefail
 
-ACTION="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/action.yml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ACTION="$SCRIPT_DIR/action.yml"
 FIXTURES=$(mktemp -d)
 trap 'rm -rf "$FIXTURES"' EXIT
 
@@ -50,97 +47,13 @@ extract_step() {
   fi
 }
 
-# Writes the `gh` stub into a fixture directory.
+# Runs a step against a fresh stand-in API serving the given fixture, and
+# echoes the requests the step made, one per line. Records the exit code for
+# `status_of` and the step's own output for `output_of`. Step outputs written
+# to $GITHUB_OUTPUT land in `outputs`.
 #
-# `tags` is a newline-separated tag list. A tag may carry its commit as
-# `tag:sha`; without one it gets a commit derived from its own name, which keeps
-# every tag on a distinct commit unless a test deliberately co-locates two.
-#
-# `release_exists`: whether `gh release view` finds the release initially.
-# `create_result`: `ok`, `race` (rejected, release then present), or `hard`.
-# `edit_fails`: whether `gh release edit` fails.
-# `tags_api_fails`: whether the tag listing errors.
-write_stubs() {
-  local fixture="$1" tags="$2" release_exists="$3"
-  local create_result="$4" edit_fails="$5" tags_api_fails="${6:-false}"
-
-  mkdir -p "$fixture/bin"
-  printf '%s\n' "$tags" | sed '/^$/d' > "$fixture/tags"
-
-  # Stub `gh`: serves the tag listing, logs every invocation, and reports
-  # whether the release exists so the step can branch on it.
-  #
-  # The listing is served in REVERSE fixture order, mimicking the API's
-  # newest-first order, which is not version order. A step that trusts the
-  # order it receives instead of ranking the tags itself fails here.
-  cat > "$fixture/bin/gh" <<STUB
-#!/usr/bin/env bash
-echo "gh \$*" >> "$fixture/gh.log"
-if [ "\$1" == "api" ]; then
-  case "\$2" in
-    *"/tags"*)
-      if [ "$tags_api_fails" == "true" ]; then
-        echo "gh: HTTP 502: Bad gateway" >&2
-        exit 1
-      fi
-      page=1
-      case "\$2" in *page=*) page="\${2##*page=}"; page="\${page%%&*}" ;; esac
-      if [ "\$page" -gt 1 ]; then
-        exit 0
-      fi
-      # Each row is the tag and the commit it names, tab-separated, as the
-      # step's \`--jq\` asks for. A fixture written as \`tag:sha\` pins the
-      # commit so two tags can be co-located; without one the commit is derived
-      # from the name.
-      #
-      # awk reverses the list the same way everywhere; \`tail -r\` is BSD-only
-      # and \`tac\` is GNU-only, so either one passes on one platform and fails
-      # on the other.
-      awk -F: '{ name = \$1; sha = (\$2 == "" ? "sha-" \$1 : \$2)
-                 line[NR] = name "\t" sha }
-               END { for (i = NR; i > 0; i--) print line[i] }' "$fixture/tags"
-      exit 0
-      ;;
-  esac
-  exit 0
-fi
-if [ "\$1 \$2" == "release create" ]; then
-  case "$create_result" in
-    race)
-      # Losing the race leaves the release present for the re-check that follows.
-      touch "$fixture/release_appeared"
-      echo "HTTP 422: Validation Failed" >&2
-      echo "Release.tag_name already exists" >&2
-      exit 1
-      ;;
-    hard)
-      echo "HTTP 403: Resource not accessible by integration" >&2
-      exit 1
-      ;;
-  esac
-  exit 0
-fi
-if [ "\$1 \$2" == "release view" ]; then
-  if [ "$release_exists" != "true" ] && [ ! -f "$fixture/release_appeared" ]; then
-    exit 1
-  fi
-  exit 0
-fi
-if [ "\$1 \$2" == "release edit" ]; then
-  if [ "$edit_fails" == "true" ]; then
-    echo "HTTP 422: Validation Failed" >&2
-    exit 1
-  fi
-  exit 0
-fi
-exit 0
-STUB
-  chmod +x "$fixture/bin/gh"
-}
-
-# Runs a step with the stubbed `gh` and echoes the commands it invoked, one per
-# line. Records the exit code for `status_of` and the step's own output for
-# `output_of`. Step outputs written to $GITHUB_OUTPUT land in `outputs`.
+# `tags` is a newline-separated list, one `name` or `name:sha` per line; a
+# pinned sha lets a test co-locate two tags on one commit.
 run_step() {
   local step_name="$1" tag="$2" tags="$3" fixture="$4"
   local release_exists="${5:-false}" create_result="${6:-ok}"
@@ -156,22 +69,41 @@ run_step() {
     return
   fi
 
-  write_stubs "$fixture" "$tags" "$release_exists" "$create_result" \
-    "$edit_fails" "$tags_api_fails"
+  printf '%s\n' "$tags" | sed '/^$/d' > "$fixture/tags"
+  echo "$release_exists" > "$fixture/release_exists"
+  echo "$create_result" > "$fixture/create_result"
+  echo "$edit_fails" > "$fixture/edit_fails"
+  echo "$tags_api_fails" > "$fixture/tags_api_fails"
+  : > "$fixture/requests.log"
   : > "$fixture/outputs"
+
+  python3 "$SCRIPT_DIR/fake_github.py" "$fixture" &
+  local server_pid=$!
+  local waited=0
+  while [ ! -s "$fixture/port" ] && [ "$waited" -lt 100 ]; do
+    sleep 0.05
+    waited=$((waited + 1))
+  done
+  if [ ! -s "$fixture/port" ]; then
+    echo 3 > "$fixture/status"
+    kill "$server_pid" 2>/dev/null
+    return
+  fi
 
   (
     cd "$fixture" || exit 2
     # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
-    # pipefail`; without pipefail a failing stub upstream of a pipe passes here
-    # and fails in CI. Step output goes to a file so stdout stays free for the
-    # call log.
+    # pipefail`. Step output goes to a file so stdout stays free for the
+    # request log.
     # GITHUB_ACTION_PATH is the action's own directory, so a step invoking a
     # script there runs the shipped copy rather than one staged for the test.
+    # GITHUB_API_URL points every script at the stand-in, exactly as the
+    # runner points them at api.github.com.
     # shellcheck disable=SC2086  # step_env is a deliberate list of assignments
-    env PATH="$fixture/bin:$PATH" GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
+    env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
+      GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       GITHUB_OUTPUT="$fixture/outputs" TAG="$tag" \
-      GITHUB_ACTION_PATH="$(dirname "$ACTION")" \
+      GITHUB_ACTION_PATH="$SCRIPT_DIR" \
       GITHUB_REPOSITORY="owner/repo" MAX_PAGES="20" \
       $step_env \
       bash --noprofile --norc -e -o pipefail -c "$step" \
@@ -180,7 +112,9 @@ run_step() {
   # Callers capture stdout via command substitution, so the status has to travel
   # through the filesystem rather than a variable the subshell would discard.
   echo $? > "$fixture/status"
-  cat "$fixture/gh.log" 2>/dev/null
+  kill "$server_pid" 2>/dev/null
+  wait "$server_pid" 2>/dev/null
+  cat "$fixture/requests.log" 2>/dev/null
 }
 
 status_of() {
@@ -211,10 +145,10 @@ fail() {
 # ---------------------------------------------------------------------------
 # Resolve release identity: wiring
 #
-# The rules themselves are unit tested in Python. What the step adds is wiring:
-# the env the runner passes, the shipped script invoked via GITHUB_ACTION_PATH,
-# and the three outputs landing in $GITHUB_OUTPUT. One run per identity shape
-# proves that path end to end.
+# The rules themselves are unit tested. What the step adds is wiring: the env
+# the runner passes, the shipped script invoked via GITHUB_ACTION_PATH, the
+# listing fetched over HTTP, and the three outputs landing in $GITHUB_OUTPUT.
+# One run per identity shape proves that path end to end.
 # ---------------------------------------------------------------------------
 
 assert_identity() {
@@ -328,22 +262,22 @@ assert_creates_with() {
 
   if [ "$(status_of "$FIXTURES/create")" -ne 0 ]; then
     fail "$description" "step exited $(status_of "$FIXTURES/create")" \
-      "gh calls: ${log//$'\n'/ | }" \
+      "requests: ${log//$'\n'/ | }" \
       "output: $(output_of "$FIXTURES/create" | tr '\n' '|')"
     return
   fi
 
   local create_line
-  create_line=$(grep "release create $tag" <<< "$log")
+  create_line=$(grep -E "^POST /repos/owner/repo/releases " <<< "$log")
   if [ -z "$create_line" ]; then
-    fail "$description" "did not create the release" "gh calls: ${log//$'\n'/ | }"
+    fail "$description" "did not create the release" "requests: ${log//$'\n'/ | }"
     return
   fi
 
   local expected
   for expected in "$@"; do
     if ! grep -q -- "$expected" <<< "$create_line"; then
-      fail "$description" "create call missing '$expected'" "create: $create_line"
+      fail "$description" "create request missing '$expected'" "create: $create_line"
       return
     fi
   done
@@ -351,17 +285,19 @@ assert_creates_with() {
   printf '  ok   %s\n' "$description"
 }
 
-# Latest is three-state on the create call, so it is passed as an explicit
-# value rather than as a bare flag that can only mean "true".
+# make_latest is three-state on the API, so it is always stated as an explicit
+# value; the fallback for an omitted flag is publish order. The notes body in
+# the create request proves the boundary flowed through notes generation.
 assert_creates_with "final release passes its notes base and claims latest" \
   "v37.0" "v36.1" false true \
-  "release create v37.0" "--notes-start-tag v36.1" "--latest=true"
+  '"tag_name": "v37.0"' '"prerelease": false' '"make_latest": "true"' \
+  '"body": "notes from v36.1"'
 assert_creates_with "candidate is marked prerelease and declines latest" \
   "v38.0-rc.1" "v37.0" true false \
-  "--prerelease" "--notes-start-tag v37.0" "--latest=false"
+  '"prerelease": true' '"make_latest": "false"' '"body": "notes from v37.0"'
 
 # With no lower line there is no boundary to pass, and an empty one would widen
-# the notes to the entire history.
+# the notes to the entire history -- generation is asked for instead.
 assert_omits_notes_start() {
   local description="$1" tag="$2"
   local log
@@ -369,17 +305,17 @@ assert_omits_notes_start() {
 
   if [ "$(status_of "$FIXTURES/create")" -ne 0 ]; then
     fail "$description" "step exited $(status_of "$FIXTURES/create")" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
-  if grep -q -- "--notes-start-tag" <<< "$log"; then
-    fail "$description" "passed a notes boundary when there was none" \
-      "gh calls: ${log//$'\n'/ | }"
+  if grep -q "generate-notes" <<< "$log"; then
+    fail "$description" "generated notes from a boundary when there was none" \
+      "requests: ${log//$'\n'/ | }"
     return
   fi
-  # Notes are still generated; only the lower boundary is absent.
-  if ! grep -q -- "--generate-notes" <<< "$log"; then
-    fail "$description" "did not generate notes" "gh calls: ${log//$'\n'/ | }"
+  if ! grep -q -- '"generate_release_notes": true' <<< "$log"; then
+    fail "$description" "did not ask for generated notes" \
+      "requests: ${log//$'\n'/ | }"
     return
   fi
   printf '  ok   %s\n' "$description"
@@ -400,50 +336,43 @@ assert_corrects_existing() {
 
   if [ "$(status_of "$FIXTURES/create")" -ne 0 ]; then
     fail "$description" "step exited $(status_of "$FIXTURES/create")" \
-      "gh calls: ${log//$'\n'/ | }" \
+      "requests: ${log//$'\n'/ | }" \
       "output: $(output_of "$FIXTURES/create" | tr '\n' '|')"
     return
   fi
 
   # Creating again would be rejected; the existing release is edited instead.
-  if grep -q "release create " <<< "$log"; then
+  if grep -qE "^POST /repos/owner/repo/releases " <<< "$log"; then
     fail "$description" "tried to create a release that already exists" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
 
   local edit_line
-  edit_line=$(grep "release edit $tag" <<< "$log")
+  edit_line=$(grep -E "^PATCH /repos/owner/repo/releases/[0-9]+ " <<< "$log")
   if [ -z "$edit_line" ]; then
     fail "$description" "did not correct the existing release's flags" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
 
   # Both flags are reconciled, not just the one that happens to be wrong.
-  if ! grep -q -- "--prerelease=$prerelease" <<< "$edit_line"; then
-    fail "$description" "edit did not set --prerelease=$prerelease" "edit: $edit_line"
+  if ! grep -q -- "\"prerelease\": $prerelease" <<< "$edit_line"; then
+    fail "$description" "edit did not set prerelease=$prerelease" "edit: $edit_line"
     return
   fi
-  if ! grep -q -- "--latest=$latest" <<< "$edit_line"; then
-    fail "$description" "edit did not set --latest=$latest" "edit: $edit_line"
-    return
-  fi
-
-  # Naming the tag is exactly what gets the call rejected and destroys the asset.
-  if grep -qE -- '--tag[= ]' <<< "$edit_line"; then
-    fail "$description" "edit named the tag; that is rejected as already_exists" \
-      "edit: $edit_line"
+  if ! grep -q -- "\"make_latest\": \"$latest\"" <<< "$edit_line"; then
+    fail "$description" "edit did not set make_latest=$latest" "edit: $edit_line"
     return
   fi
 
-  # Fields the edit must leave alone. Passing any of them would overwrite notes
-  # a human may have edited, or retarget the release at another commit.
-  local forbidden
-  for forbidden in "--notes" "--generate-notes" "--notes-start-tag" "--title" \
-    "--target" "--notes-file" "--discussion-category"; do
-    if grep -q -- "$forbidden" <<< "$edit_line"; then
-      fail "$description" "edit passed $forbidden, overwriting existing content" \
+  # The edit is addressed by id and names only the two flags. Naming the tag is
+  # exactly what gets a correction rejected, and any other field it carried
+  # would overwrite content -- notes a human edited, the title, the target.
+  local field
+  for field in tag_name name body draft target_commitish discussion_category_name; do
+    if grep -q -- "\"$field\"" <<< "$edit_line"; then
+      fail "$description" "edit named '$field', which it must leave alone" \
         "edit: $edit_line"
       return
     fi
@@ -457,19 +386,19 @@ assert_corrects_existing "corrects a candidate wrongly published as final" \
 assert_corrects_existing "corrects a final left marked prerelease" \
   "v37.0" false true
 
-# Every call must be scoped to the pushed tag. A call naming another release
+# Every request must be scoped to the pushed tag. A call naming another release
 # would move "Latest" off a release this run has no business touching.
 assert_touches_only_pushed_tag() {
   local description="$1" tag="$2" release_exists="$3"
   local log
   log=$(run_create "$tag" "$release_exists" "v36.1" false true)
   local other
-  other=$(grep -E "^gh release (create|edit|view|upload|delete) " <<< "$log" \
-    | awk '{print $4}' | grep -v "^${tag}$" | head -1)
+  other=$(grep -oE '"tag_name": "[^"]+"|/releases/tags/[^ ]+' <<< "$log" \
+    | grep -oE 'v[0-9][^" ]*' | grep -v "^${tag}$" | head -1)
 
   if [ -n "$other" ]; then
-    fail "$description" "a call targeted '$other' instead of the pushed tag" \
-      "gh calls: ${log//$'\n'/ | }"
+    fail "$description" "a request targeted '$other' instead of the pushed tag" \
+      "requests: ${log//$'\n'/ | }"
     return
   fi
   printf '  ok   %s\n' "$description"
@@ -492,15 +421,15 @@ assert_survives_concurrent_create() {
 
   if [ "$(status_of "$FIXTURES/create")" -ne 0 ]; then
     fail "$description" "step exited $(status_of "$FIXTURES/create") after losing the race" \
-      "gh calls: ${log//$'\n'/ | }" \
+      "requests: ${log//$'\n'/ | }" \
       "output: $(output_of "$FIXTURES/create" | tr '\n' '|')"
     return
   fi
 
   # Having lost the race, it must reconcile the release the winner created.
-  if ! grep -q "release edit $tag" <<< "$log"; then
+  if ! grep -qE "^PATCH /repos/owner/repo/releases/[0-9]+ " <<< "$log"; then
     fail "$description" "did not reconcile the release the other job created" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
   printf '  ok   %s\n' "$description"
@@ -512,7 +441,7 @@ echo
 echo "Create or update: unrecoverable failure"
 
 # A create that fails for any reason other than the race ends the run, and the
-# reason the CLI gave has to reach the annotation -- only annotation text shows
+# reason the API gave has to reach the annotation -- only annotation text shows
 # up in the run summary and the checks UI.
 assert_reports_create_failure() {
   local description="$1" tag="$2"
@@ -523,14 +452,14 @@ assert_reports_create_failure() {
 
   if [ "$(status_of "$FIXTURES/create")" -eq 0 ]; then
     fail "$description" "step succeeded despite no release" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
 
-  # Nothing may be uploaded to a release that does not exist.
-  if grep -q "release upload " <<< "$log"; then
-    fail "$description" "attempted an upload with no release present" \
-      "gh calls: ${log//$'\n'/ | }"
+  # Nothing may be corrected on a release that does not exist.
+  if grep -q "^PATCH " <<< "$log"; then
+    fail "$description" "patched a release that was never created" \
+      "requests: ${log//$'\n'/ | }"
     return
   fi
 
@@ -553,7 +482,7 @@ assert_reports_edit_failure() {
 
   if [ "$(status_of "$FIXTURES/create")" -eq 0 ]; then
     fail "$description" "step succeeded despite failing to correct the flags" \
-      "gh calls: ${log//$'\n'/ | }"
+      "requests: ${log//$'\n'/ | }"
     return
   fi
   printf '  ok   %s\n' "$description"
@@ -568,7 +497,7 @@ assert_reports_edit_failure "fails when the flags cannot be corrected" "v38.3-rc
 
 echo
 echo "generate-structure-sql is untouched"
-SIBLING="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/generate-structure-sql/action.yml"
+SIBLING="$(cd "$SCRIPT_DIR/.." && pwd)/generate-structure-sql/action.yml"
 if ! grep -q "name: Upload to GitHub Release" "$SIBLING" 2>/dev/null; then
   fail "generate-structure-sql still creates releases" \
     "its Upload to GitHub Release step is gone; nothing is cutting releases yet"

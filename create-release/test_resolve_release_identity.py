@@ -59,21 +59,9 @@ def notes_base(pushed: str, *names: str) -> str | None:
     return base.name if base else None
 
 
-def listing(argv: list[str], names: list[str]) -> str:
-    """What `gh api` prints for a page of tags, given the `--jq` it was passed.
-
-    The fields come from the filter rather than being assumed, so a step that
-    stopped asking for the commit gets a listing without one -- as it would from
-    the real API.
-    """
-    fields = argv[argv.index("--jq") + 1]
-    rows = []
-    for name in names:
-        if ".commit.sha" in fields:
-            rows.append(f"{name}\tsha-{name}")
-        else:
-            rows.append(name)
-    return "".join(f"{row}\n" for row in rows)
+def listing(names: list[str]) -> list[dict]:
+    """A page of the tags API response, each tag on a commit named after it."""
+    return [{"name": name, "commit": {"sha": f"sha-{name}"}} for name in names]
 
 
 def claims_latest(pushed: str, *names: str) -> bool:
@@ -306,52 +294,54 @@ class TestCollectTags(unittest.TestCase):
     def collect(self, pages, pushed, max_pages=20):
         calls = []
 
-        def fake_run(argv, **kwargs):
-            page = int(argv[2].split("&page=")[1])
+        def fake_request(method, path, payload=None):
+            page = int(path.split("&page=")[1])
             calls.append(page)
             names = pages[page - 1] if page <= len(pages) else []
-            return mock.Mock(returncode=0, stdout=listing(argv, names))
+            return 200, listing(names)
 
-        with mock.patch.object(identity.subprocess, "run", fake_run):
+        with mock.patch.object(identity.github_api, "request", fake_request):
             collected = identity.collect_tags("owner/repo", max_pages, parsed(pushed))
         return [tag.name for tag in collected], calls
 
     def test_carries_the_commit_each_tag_names(self):
         # The commit decides which tag a completed version line published, so it
-        # has to survive the fetch. A step that stopped asking the listing for it
-        # would still rank correctly and pick the wrong notes base.
-        calls = []
-
-        def fake_run(argv, **kwargs):
-            calls.append(argv)
-            page = int(argv[2].split("&page=")[1])
+        # has to survive the fetch. A fetch that dropped it would still rank
+        # correctly and pick the wrong notes base.
+        def fake_request(method, path, payload=None):
+            page = int(path.split("&page=")[1])
             names = ["v2.0", "v2.0-rc.1", "v1.0"] if page == 1 else []
-            return mock.Mock(returncode=0, stdout=listing(argv, names))
+            return 200, listing(names)
 
-        with mock.patch.object(identity.subprocess, "run", fake_run):
+        with mock.patch.object(identity.github_api, "request", fake_request):
             collected = identity.collect_tags("owner/repo", 20, parsed("v3.0"))
 
+        self.assertTrue(collected, "the listing was never fetched")
         self.assertTrue(
             all(tag.commit for tag in collected),
             f"every tag needs a commit, got {[(t.name, t.commit) for t in collected]}",
         )
 
-    def test_asks_the_listing_for_the_commit(self):
-        # Reading it from `git` instead would need the repository checked out, and
-        # would answer "no commit" for every tag when it was not.
+    def test_reads_tags_from_the_listing_endpoint(self):
+        # The tags endpoint is what reports the commit each tag names with the
+        # annotated tags already resolved; it is also what keeps the action free
+        # of any checkout.
         seen = []
 
-        def fake_run(argv, **kwargs):
-            seen.append(argv)
-            return mock.Mock(returncode=0, stdout="")
+        def fake_request(method, path, payload=None):
+            seen.append((method, path))
+            return 200, []
 
-        with mock.patch.object(identity.subprocess, "run", fake_run):
+        with mock.patch.object(identity.github_api, "request", fake_request):
             identity.collect_tags("owner/repo", 20, parsed("v3.0"))
 
         self.assertTrue(seen, "the listing was never fetched")
-        for argv in seen:
-            self.assertEqual(argv[0], "gh", f"shelled out to {argv[0]}")
-            self.assertIn(".commit.sha", argv[argv.index("--jq") + 1])
+        for method, path in seen:
+            self.assertEqual(method, "GET")
+            self.assertTrue(
+                path.startswith("/repos/owner/repo/tags?"),
+                f"fetched {path} instead of the tags listing",
+            )
 
     def test_stops_after_the_page_holding_a_lower_version(self):
         # The base is in the pushed tag's own version or the highest below it, so
@@ -385,31 +375,20 @@ class TestCollectTags(unittest.TestCase):
             self.collect([["v9.0-rc.1"]] * 3, "v9.0", max_pages=2)
 
     def test_fails_when_the_listing_errors(self):
-        with (
-            mock.patch.object(
-                identity.subprocess,
-                "run",
-                lambda *a, **k: mock.Mock(returncode=1, stdout=""),
-            ),
-            self.assertRaises(SystemExit),
-        ):
-            identity.collect_tags("owner/repo", 20, parsed("v1.0"))
-
-    def test_names_the_missing_cli_rather_than_crashing(self):
-        # Self-hosted runner images do not necessarily carry gh, and the raw
-        # FileNotFoundError traceback reads like a scripting bug rather than a
-        # missing prerequisite.
-        def no_gh(*args, **kwargs):
-            raise FileNotFoundError("gh")
-
+        # A failed listing is not an empty repository, and the API's own reason
+        # has to reach the annotation.
         stderr = io.StringIO()
         with (
-            mock.patch.object(identity.subprocess, "run", no_gh),
+            mock.patch.object(
+                identity.github_api,
+                "request",
+                lambda *a, **k: (502, {"message": "Bad gateway"}),
+            ),
             contextlib.redirect_stderr(stderr),
             self.assertRaises(SystemExit),
         ):
             identity.collect_tags("owner/repo", 20, parsed("v1.0"))
-        self.assertIn("gh CLI is not on PATH", stderr.getvalue())
+        self.assertIn("Bad gateway", stderr.getvalue())
 
     def test_ranks_tags_rather_than_trusting_the_listing_order(self):
         # The API places a version's final after its own candidates and sorts
@@ -431,16 +410,16 @@ class TestMain(unittest.TestCase):
             "GITHUB_OUTPUT": str(output_path),
         }
 
-        def fake_run(argv, **kwargs):
-            page = int(argv[2].split("&page=")[1])
+        def fake_request(method, path, payload=None):
+            page = int(path.split("&page=")[1])
             names = tag_names if page == 1 else []
-            return mock.Mock(returncode=0, stdout=listing(argv, names))
+            return 200, listing(names)
 
         # main() reports the identity it resolved on stdout, which is the step's
         # log rather than anything under test here.
         with (
             mock.patch.dict(identity.os.environ, env, clear=False),
-            mock.patch.object(identity.subprocess, "run", fake_run),
+            mock.patch.object(identity.github_api, "request", fake_request),
             mock.patch("sys.stdout", io.StringIO()),
         ):
             identity.main()

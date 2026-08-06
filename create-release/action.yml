@@ -18,16 +18,18 @@ description: |
   Prerequisites (caller must provide):
   - A tag push. The pushed tag is read from github.ref_name.
   - A token with permission to list tags and to create and edit releases.
-  - The gh CLI and python3 on PATH. GitHub-hosted runners carry both;
-    self-hosted images must provide them.
+  - python3 on PATH, the one prerequisite beyond a shell. Everything else
+    that GitHub-hosted runners preinstall and self-hosted images may not --
+    the gh CLI included -- is deliberately not used.
 
-  No checkout, database, language runtime or dependency install is needed: the
-  tag list and the commit each tag names both come from the tag listing, and the
-  release is created over the API. Keeping that failure surface small is what
-  makes it safe to gate other jobs on this one.
+  No checkout, database, CLI or dependency install is needed: the tag list and
+  the commit each tag names both come from the tag listing, and the release is
+  created and corrected over the REST API. Keeping that failure surface small
+  is what makes it safe to gate other jobs on this one.
 
-  Ranking runs on the interpreter the runner already carries, using the standard
-  library only. A third-party import would add a setup step to every caller.
+  Both steps run on the interpreter the runner already carries, using the
+  standard library only. A third-party import would add a setup step to every
+  caller.
 
   A version tag carries two or three dot-separated numbers, optionally followed
   by a release-candidate ordinal (`-rc.4` or `-rc4`) and optionally by a trailing
@@ -73,57 +75,10 @@ runs:
     - name: Create or update release
       env:
         GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
         LATEST: ${{ steps.identity.outputs.latest }}
         NOTES_START: ${{ steps.identity.outputs.notes_start }}
         PRERELEASE: ${{ steps.identity.outputs.prerelease }}
         TAG: ${{ github.ref_name }}
-      run: |
-        set -euo pipefail
-
-        # Both flags are stated on every call. `--latest` is three-state on the
-        # release API: omitting it is not the same as declining it, and the
-        # fallback is publish order.
-        FLAGS=(--prerelease="$PRERELEASE" --latest="$LATEST")
-
-        # Correcting an existing release with a call that also names the tag is
-        # rejected as `already_exists`, and the rejection takes any attached
-        # asset with it. Editing the flags as named fields leaves the rest of the
-        # release -- notes, title, target, assets -- alone.
-        reconcile() {
-          if ! gh release edit "$TAG" "${FLAGS[@]}"; then
-            echo "::error::Could not correct the release flags on $TAG"
-            return 1
-          fi
-          echo "Corrected $TAG: prerelease=$PRERELEASE latest=$LATEST"
-        }
-
-        if gh release view "$TAG" > /dev/null 2>&1; then
-          echo "Release $TAG already exists; correcting its flags"
-          reconcile
-          exit $?
-        fi
-
-        NOTES=(--generate-notes)
-        # An empty boundary is not the same as no boundary: it would widen the
-        # notes to the entire history.
-        [ -n "$NOTES_START" ] && NOTES+=(--notes-start-tag "$NOTES_START")
-
-        if CREATE_OUTPUT=$(gh release create "$TAG" --title "$TAG" \
-          "${NOTES[@]}" "${FLAGS[@]}" 2>&1); then
-          echo "Created release $TAG: prerelease=$PRERELEASE latest=$LATEST" \
-            "notes base=${NOTES_START:-<none>}"
-          exit 0
-        fi
-
-        # Another job pushing the same tag may have won the race. Its release is
-        # the one this run wanted, so reconcile the flags onto it rather than
-        # failing.
-        if gh release view "$TAG" > /dev/null 2>&1; then
-          echo "Release $TAG appeared concurrently; correcting its flags"
-          reconcile
-          exit $?
-        fi
-
-        echo "::error::Could not create release $TAG: $CREATE_OUTPUT"
-        exit 1
+      run: python3 "$GITHUB_ACTION_PATH/create_or_update_release.py"
       shell: bash
