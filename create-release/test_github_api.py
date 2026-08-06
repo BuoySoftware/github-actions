@@ -2,8 +2,7 @@
 """Tests the REST transport in github_api.py against a real local server.
 
 The other suites mock this module out, so this one is where an actual HTTP
-exchange happens: the auth header reaching the wire, an error body coming back
-decoded instead of raised, a connection failure reported like an API error.
+exchange happens.
 
 Usage: python3 create-release/test_github_api.py
 """

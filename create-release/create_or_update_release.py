@@ -2,14 +2,8 @@
 """Create the GitHub release for the pushed tag, or correct an existing one.
 
 Reads the tag from TAG and its resolved identity from LATEST, NOTES_START and
-PRERELEASE, and talks to the release REST API directly.
-
-When the release already exists -- because someone cut it by hand, or because
-another job won the race on the same tag -- its prerelease and "Latest" flags
-are corrected instead. The correction patches the release by id and names only
-those two fields, so notes, title, target and any attached assets survive it.
-
-Runs on the system interpreter with the standard library only.
+PRERELEASE. An existing release only has its two flags corrected, by a PATCH
+that names nothing else. Standard library only.
 """
 
 import os
@@ -28,9 +22,8 @@ def fail(message: str) -> NoReturn:
 def existing_release(repository: str, tag: str) -> int | None:
     """The id of the tag's release, or None when it cannot be found.
 
-    Only a definite hit counts. A lookup that failed for another reason is
-    treated as absence, so the create that follows surfaces the real error
-    with the API's own message rather than this probe masking it.
+    Any failed lookup counts as absence, so the create that follows reports
+    the real error.
     """
     status, release = github_api.request(
         "GET", f"/repos/{repository}/releases/tags/{tag}"
@@ -43,14 +36,10 @@ def existing_release(repository: str, tag: str) -> int | None:
 def reconcile(
     repository: str, release: int, tag: str, prerelease: str, latest: str
 ) -> None:
-    """Correct the flags on an existing release, leaving everything else alone.
+    """Correct both flags on an existing release, leaving everything else alone.
 
-    Both flags are always stated, not just the one that happens to be wrong.
-    The payload names nothing else: a field the PATCH does not send cannot be
-    overwritten, which is what lets a human-edited release survive the
-    correction. In particular it never names the tag -- recreating the release
-    by tag is rejected as already_exists, and the rejection takes any attached
-    asset with it.
+    The payload must never grow: a call that names the tag is rejected as
+    already_exists, and the rejection destroys any attached asset.
     """
     status, body = github_api.request(
         "PATCH",
@@ -104,9 +93,7 @@ def main() -> None:
     if notes_start:
         payload["body"] = generated_notes(repository, tag, notes_start)
     else:
-        # No boundary at all: notes are still generated, from the entire
-        # history, because nothing precedes this release. An empty
-        # previous_tag_name would be rejected rather than meaning that.
+        # Nothing precedes this release, so the notes cover the entire history.
         payload["generate_release_notes"] = True
 
     status, created = github_api.request(
@@ -119,9 +106,8 @@ def main() -> None:
         )
         return
 
-    # Another job pushing the same tag may have won the race. Its release is
-    # the one this run wanted, so reconcile the flags onto it rather than
-    # failing.
+    # Another job pushing the same tag may have won the race; its release is
+    # the one this run wanted.
     release = existing_release(repository, tag)
     if release is not None:
         print(f"Release {tag} appeared concurrently; correcting its flags")

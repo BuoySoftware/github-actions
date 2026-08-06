@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """A stand-in GitHub API for the shell harness, serving one fixture directory.
 
-The harness points GITHUB_API_URL here, so the shipped step bodies run against
-real HTTP with nothing stubbed on PATH. Every request is appended to
-`requests.log` as `METHOD path body`, which is what the assertions read: not
-whether the step succeeded, but what it actually asked the API to do.
-
-The fixture directory configures the responses:
+Every request is appended to `requests.log` as `METHOD path body`, which is
+what the harness assertions read. The fixture directory configures the
+responses:
   tags            one `name` or `name:sha` per line, oldest first; served
                   newest-first as the API does, honouring page/per_page
   release_exists  `true` when the release lookup should find one

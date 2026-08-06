@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """Requests against the GitHub REST API, using the standard library only.
 
-The API root comes from GITHUB_API_URL, which the runner sets on every job,
-so the same scripts work against GitHub Enterprise hosts -- and a test can
-point them at a local stand-in server.
-
-Responses are returned with their status rather than raised, because callers
-branch on specific statuses -- a 404 that means "create it", a 422 that means
-"lost the race" -- and only the caller knows which ones are errors.
+The API root comes from GITHUB_API_URL. Responses are returned with their
+status rather than raised; only the caller knows which statuses are errors.
 """
 
 import json
@@ -20,9 +15,7 @@ from typing import Any
 def request(method: str, path: str, payload: dict | None = None) -> tuple[int, Any]:
     """The response status and decoded JSON body for an API call.
 
-    Connection-level failures return status 0 with the reason under
-    "message", shaped like an API error body so callers report both kinds of
-    failure the same way.
+    Connection-level failures return status 0 with the reason under "message".
     """
     url = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/") + path
     body = None if payload is None else json.dumps(payload).encode()

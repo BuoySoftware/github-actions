@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """Tests the create-or-correct flow in create_or_update_release.py.
 
-The dangerous cases here are the ones that look like success: a correction
-that recreates the release destroys its attached assets, an omitted
-make_latest silently falls back to publish order, and an edit that names more
-than the two flags overwrites notes a human may have written. Every case
+The dangerous cases are the ones that look like success, so every case
 asserts the calls the script makes, not just its exit code.
 
 Usage: python3 create-release/test_create_or_update_release.py

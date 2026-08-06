@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
 #
-# Tests the shipped step bodies in action.yml against a local stand-in GitHub
-# API, plus the invariants the file itself must hold.
+# Tests the shipped step bodies in action.yml, plus the invariants the file
+# itself must hold.
 #
-# The release-identity rules (notes base, prerelease, latest, paging) are unit
-# tested against the scripts directly; they are not restated here. What only
-# this suite covers: the step bodies as shipped, extracted from action.yml and
-# run under the runner's shell flags, against real HTTP -- so the wiring from
-# env to script to API to step outputs is exercised with nothing stubbed on
-# PATH.
-#
-# Assertions read the requests the steps actually made from the stand-in's
-# log. The step's exit code alone cannot distinguish a field-scoped flag
-# correction from a re-create that would have destroyed the release's assets;
-# the request log can.
+# The release-identity rules are unit tested against the scripts directly and
+# are not restated here. This suite covers what only it can: the step bodies
+# as shipped, extracted from action.yml and run under the runner's shell flags
+# against a local stand-in GitHub API, with assertions on the requests they
+# actually make. Nothing is stubbed on PATH.
 #
 # Usage: ./create-release/test-create-release.sh
 
@@ -95,10 +89,6 @@ run_step() {
     # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
     # pipefail`. Step output goes to a file so stdout stays free for the
     # request log.
-    # GITHUB_ACTION_PATH is the action's own directory, so a step invoking a
-    # script there runs the shipped copy rather than one staged for the test.
-    # GITHUB_API_URL points every script at the stand-in, exactly as the
-    # runner points them at api.github.com.
     # shellcheck disable=SC2086  # step_env is a deliberate list of assignments
     env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
       GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \

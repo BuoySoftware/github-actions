@@ -92,19 +92,9 @@ def fail(message: str) -> NoReturn:
 def list_tags(repository: str, max_pages: int) -> Iterator[Tag | None]:
     """Every version tag in the repository, a page at a time.
 
-    Tags come from the API, so the action needs no checkout. Identity is decided
-    by comparing the pushed tag against the others, and a shallow checkout would
-    narrow that comparison into a plausible wrong answer with nothing to detect
-    it.
-
-    Every version tag is a candidate boundary, including test and personal ones:
-    excluding those would make the notes base depend on who cut the surrounding
-    tags.
-
-    Each tag is listed with the commit it names, so the commit a version line
-    published is decided from the same response the ranking comes from. Asking
-    `git` for it instead would require the caller to have checked the repository
-    out, and would answer "no commit" for every tag when they had not.
+    Tags and the commit each one names both come from the API, so the action
+    needs no checkout. No tag is excluded: test and personal tags are ordinary
+    candidates, or the notes base would depend on who cut the surrounding tags.
 
     Yields None at each page boundary, so the caller can decide whether it has
     seen enough without this function knowing what it is looking for.
