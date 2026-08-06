@@ -140,8 +140,18 @@ class TestNotesBase(unittest.TestCase):
         # Each candidate then documents only what changed since the last one.
         self.assertEqual(notes_base("v37.0-rc.4", *self.MAIN), "v37.0-rc.3")
 
-    def test_a_final_bases_on_its_own_last_candidate(self):
-        self.assertEqual(notes_base("v36.0", *self.MAIN), "v36.0-rc.7-mega")
+    def test_a_final_reaches_back_past_its_own_candidates(self):
+        # The final is promoted at the commit its last candidate already names,
+        # so basing it there would generate empty notes. Its notes describe the
+        # whole version instead.
+        self.assertEqual(notes_base("v36.0", *self.MAIN), "v35.3")
+
+    def test_a_final_with_its_own_candidate_series_reaches_the_previous_line(self):
+        # The case the tag populations carry everywhere: v36.1-rc.1 exists, and
+        # v36.1 must still base on version 36.0's boundary, not on its own
+        # candidate.
+        tags_with_rc = (*self.MAIN, "v36.1-rc.1")
+        self.assertEqual(notes_base("v36.1", *tags_with_rc), "v36.0-rc.7-mega")
 
     def test_the_first_candidate_of_a_version_reaches_back(self):
         # Nothing below it in its own version, so the highest version below it
@@ -153,11 +163,8 @@ class TestNotesBase(unittest.TestCase):
         # later candidate on it would re-describe all of it.
         self.assertEqual(notes_base("v36.0-rc.7-mega", *self.MAIN), "v36.0-rc.6-mega")
 
-    def test_a_finals_own_base_is_its_last_candidate_not_itself(self):
-        # A version's final outranks all of its candidates, so `rank <` already
-        # excludes it from its own search. The case is here because that is the
-        # only reason it is excluded.
-        self.assertEqual(notes_base("v2.0", "v2.0-rc.1", "v2.0", "v1.0"), "v2.0-rc.1")
+    def test_a_final_never_takes_its_own_candidate_as_base(self):
+        self.assertEqual(notes_base("v2.0", "v2.0-rc.1", "v2.0", "v1.0"), "v1.0")
 
     def test_reaches_back_past_a_final_that_sits_behind_its_last_candidate(self):
         # `v36.1` has no candidates of its own, so it takes version 36.0's

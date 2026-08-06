@@ -184,19 +184,22 @@ def notes_base(tags: list[Tag], pushed: Tag) -> Tag | None:
     Without a base the create step omits the boundary rather than passing an
     empty one, which would generate notes from the entire history.
     """
-    # The highest tag below the pushed tag within its own version. Each candidate
-    # then documents only what changed since the last one.
-    #
-    # A final outranks every candidate of its version, so ranking below the
-    # pushed tag already means the match is a candidate.
-    same_version = [
-        tag for tag in tags if tag.version == pushed.version and tag.rank < pushed.rank
-    ]
-    if same_version:
-        return same_version[-1]
+    # A candidate bases on the highest candidate below it in its own version,
+    # documenting only what changed since the last one. A final never does: it
+    # is promoted at the commit its last candidate already names, so basing it
+    # there would generate empty notes. The final reaches back instead, and its
+    # notes describe the whole version.
+    if not pushed.is_final:
+        same_version = [
+            tag
+            for tag in tags
+            if tag.version == pushed.version and tag.rank < pushed.rank
+        ]
+        if same_version:
+            return same_version[-1]
 
-    # Nothing below it in its own version, so reach back to the highest version
-    # below and take that line's published boundary.
+    # Reach back to the highest version below and take that line's published
+    # boundary.
     lower = [tag.version for tag in tags if tag.version < pushed.version]
     if not lower:
         return None
