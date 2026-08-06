@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 """Attach the generated structure.sql to the pushed tag's GitHub release.
 
-Reads the tag from GITHUB_REF_NAME and the file from STRUCTURE_SQL_PATH, and
-talks to the release REST API directly, so the step needs no CLI on the
-runner.
-
-An existing release is attached to without being modified: patching one with a
-call that names the tag fails with `already_exists`, and the asset does not
-survive the failed call. A missing release is created first -- tags are pushed
-without a release being cut, and the asset still needs somewhere to land.
-
-The upload replaces an asset of the same name left behind by an earlier run,
-so re-running the job is safe.
+Reads the tag from GITHUB_REF_NAME and the file from STRUCTURE_SQL_PATH. An
+existing release is attached to without being modified; a missing one is
+created first. The upload replaces a same-named asset from an earlier run.
 """
 
 import os
@@ -55,7 +47,6 @@ def created_release(repository: str, tag: str) -> dict:
         return release
 
     # Another job may have cut the release between the lookup and the create.
-    # Its release is somewhere for the asset to land, which is the point.
     raced = release_for(repository, tag)
     if raced is not None:
         print(f"Release {tag} appeared concurrently; attaching to it")

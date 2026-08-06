@@ -10,10 +10,9 @@
 # otherwise looks green.
 #
 # The step bodies are extracted from action.yml rather than restated here, so
-# the test exercises the shipped logic instead of a copy that can drift. The
-# steps run against a local stand-in GitHub API via GITHUB_API_URL, with
-# nothing stubbed on PATH; assertions read the requests the steps actually
-# made from the stand-in's log.
+# the test exercises the shipped logic instead of a copy that can drift. They
+# run against a local stand-in GitHub API, with assertions on the requests
+# they actually make. Nothing is stubbed on PATH.
 #
 # Usage: ./generate-structure-sql/test-upload-to-release.sh
 
@@ -89,8 +88,6 @@ run_step() {
     # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
     # pipefail`. Step output goes to a file so stdout stays free for the
     # request log.
-    # GITHUB_ACTION_PATH is the action's own directory, so a step invoking a
-    # script there runs the shipped copy rather than one staged for the test.
     env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
       GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       GITHUB_ACTION_PATH="$SCRIPT_DIR" \

@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Verify the structure.sql asset is attached to the pushed tag's release.
 
-A clean exit from the upload is not proof the asset landed, and losing it is
-silent and costly: downstream tooling reads an empty schema diff from a run
-that otherwise looks green. The check asks the API for the release's assets
-and requires the exact file name -- a near-miss like `structure.sql.gz` does
-not count.
+A clean exit from the upload is not proof the asset landed. The check requires
+the exact file name, so a near-miss like `structure.sql.gz` does not count.
 """
 
 import os

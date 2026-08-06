@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """A stand-in GitHub API for the shell harness, serving one fixture directory.
 
-The harness points GITHUB_API_URL here, so the shipped step bodies run against
-real HTTP with nothing stubbed on PATH. Every request is appended to
-`requests.log` as `METHOD path body`, which is what the assertions read: not
-whether the step succeeded, but what it actually asked the API to do.
-
-The fixture directory configures the responses:
+Every request is appended to `requests.log` as `METHOD path body`, which is
+what the harness assertions read. The fixture directory configures the
+responses:
   release_exists   `true` when the release lookup should find one
   attached_assets  asset names on the existing release, one per line
   create_result    `ok`, `race` (rejected, release then present) or `hard`
   view_fails       `true` when reading the release should return a 500
 
-The release's upload_url points back at this server, as the real API's points
-at its upload host. Once listening, the chosen port is written to `port`.
+The release's upload_url points back at this server. Once listening, the
+chosen port is written to `port`.
 
 Usage: python3 generate-structure-sql/fake_github.py <fixture-dir>
 """
