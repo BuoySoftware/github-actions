@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 #
-# Tests the "Resolve release identity" and "Create or update release" steps in
-# action.yml.
+# Tests the shell-owned surface of action.yml: the "Create or update release"
+# step, the wiring from the identity script to step outputs, and the invariants
+# the file itself must hold.
 #
-# Release identity is easy to get wrong in ways that look green. Notes generated
-# from the wrong base silently describe the wrong range of commits -- often
-# hundreds of them. A final release that declines "Latest" leaves consumers
-# pointing at an older version, and a candidate that claims it misdirects
-# everyone. When the release already exists, correcting its flags by a call that
-# also names the tag is rejected outright and takes any attached asset down with
-# it.
+# The release-identity rules (notes base, prerelease, latest, paging) are unit
+# tested in test_resolve_release_identity.py against the script directly; they
+# are not restated here. What only this suite covers: the step bodies as
+# shipped, extracted from action.yml and run under the runner's shell flags, so
+# a change to the wiring or the API calls is exercised rather than a copy that
+# can drift.
 #
-# The step bodies are extracted from action.yml rather than restated here, so the
-# test exercises the shipped logic instead of a copy that can drift. `git` and
-# `gh` are stubbed on PATH: `gh` serves the tag listing a page at a time and
-# records the commands each step would issue, and `git` answers the commit a tag
-# names. The listing is served newest-first, as the API does, so a step that
-# trusts the order it receives fails here.
+# When the release already exists, correcting its flags by a call that also
+# names the tag is rejected outright and takes any attached asset down with it.
+# The create/edit split, the race with a concurrent job, and failure reporting
+# all live in bash and are covered only here.
+#
+# `gh` is stubbed on PATH: it serves the tag listing a page at a time,
+# newest-first as the API does, and records the commands each step would issue.
 #
 # Usage: ./create-release/test-create-release.sh
 
@@ -49,63 +50,29 @@ extract_step() {
   fi
 }
 
-# Writes the `git` and `gh` stubs into a fixture directory.
+# Writes the `gh` stub into a fixture directory.
 #
 # `tags` is a newline-separated tag list. A tag may carry its commit as
 # `tag:sha`; without one it gets a commit derived from its own name, which keeps
 # every tag on a distinct commit unless a test deliberately co-locates two.
 #
-# A tag whose commit is given as `tag:!` cannot be resolved, standing in for a
-# tag object a partial fetch left behind.
-#
 # `release_exists`: whether `gh release view` finds the release initially.
 # `create_result`: `ok`, `race` (rejected, release then present), or `hard`.
 # `edit_fails`: whether `gh release edit` fails.
-# `tags_per_page`: page size for the tag listing, so paging can be exercised
-# with small fixtures.
 # `tags_api_fails`: whether the tag listing errors.
 write_stubs() {
   local fixture="$1" tags="$2" release_exists="$3"
-  local create_result="$4" edit_fails="$5"
-  local tags_per_page="${6:-100}" tags_api_fails="${7:-false}"
+  local create_result="$4" edit_fails="$5" tags_api_fails="${6:-false}"
 
   mkdir -p "$fixture/bin"
   printf '%s\n' "$tags" | sed '/^$/d' > "$fixture/tags"
 
-  # Stub `git`: answers the per-tag commit lookup. The tag listing comes from the
-  # API stub below, so a step that reaches for `git tag` here gets nothing and
-  # the assertion fails rather than quietly passing on local state.
-  cat > "$fixture/bin/git" <<STUB
-#!/usr/bin/env bash
-echo "git \$*" >> "$fixture/git.log"
-if [ "\$1" == "rev-list" ] || [ "\$1" == "rev-parse" ]; then
-  # The commit a tag names. \`tag:sha\` in the fixture pins it; otherwise it is
-  # derived from the tag name so each tag sits on its own commit.
-  ref="\${@: -1}"
-  ref="\${ref%^{commit\}}"
-  ref="\${ref%^{\}}"
-  line=\$(grep -m1 "^\${ref}:" "$fixture/tags")
-  if [ "\${line#*:}" == "!" ]; then
-    echo "fatal: bad revision '\$ref'" >&2
-    exit 128
-  fi
-  if [ -n "\$line" ]; then
-    echo "\${line#*:}"
-  else
-    echo "sha-\$ref"
-  fi
-  exit 0
-fi
-exit 0
-STUB
-  chmod +x "$fixture/bin/git"
-
-  # Stub `gh`: serves the tag listing a page at a time, logs every invocation,
-  # and reports whether the release exists so the step can branch on it.
+  # Stub `gh`: serves the tag listing, logs every invocation, and reports
+  # whether the release exists so the step can branch on it.
   #
-  # Pages are served in REVERSE fixture order, mimicking the API's newest-first
-  # listing, which is not version order. Any step that trusts the order it
-  # receives instead of ranking the tags itself fails here.
+  # The listing is served in REVERSE fixture order, mimicking the API's
+  # newest-first order, which is not version order. A step that trusts the
+  # order it receives instead of ranking the tags itself fails here.
   cat > "$fixture/bin/gh" <<STUB
 #!/usr/bin/env bash
 echo "gh \$*" >> "$fixture/gh.log"
@@ -118,19 +85,20 @@ if [ "\$1" == "api" ]; then
       fi
       page=1
       case "\$2" in *page=*) page="\${2##*page=}"; page="\${page%%&*}" ;; esac
-      per_page=$tags_per_page
-      start=\$(( (page - 1) * per_page + 1 ))
-      # Each row is the tag and the commit it names, tab-separated, as the step's
-      # \`--jq\` asks for. A fixture written as \`tag:sha\` pins the commit so two
-      # tags can be co-located; without one the commit is derived from the name.
+      if [ "\$page" -gt 1 ]; then
+        exit 0
+      fi
+      # Each row is the tag and the commit it names, tab-separated, as the
+      # step's \`--jq\` asks for. A fixture written as \`tag:sha\` pins the
+      # commit so two tags can be co-located; without one the commit is derived
+      # from the name.
       #
-      # awk reverses the list the same way everywhere; \`tail -r\` is BSD-only and
-      # \`tac\` is GNU-only, so either one passes on one platform and fails on the other.
+      # awk reverses the list the same way everywhere; \`tail -r\` is BSD-only
+      # and \`tac\` is GNU-only, so either one passes on one platform and fails
+      # on the other.
       awk -F: '{ name = \$1; sha = (\$2 == "" ? "sha-" \$1 : \$2)
-                 if (sha == "!") { sha = "" }
                  line[NR] = name "\t" sha }
-               END { for (i = NR; i > 0; i--) print line[i] }' "$fixture/tags" \
-        | sed -n "\${start},\$((start + per_page - 1))p"
+               END { for (i = NR; i > 0; i--) print line[i] }' "$fixture/tags"
       exit 0
       ;;
   esac
@@ -170,14 +138,13 @@ STUB
   chmod +x "$fixture/bin/gh"
 }
 
-# Runs a step with stubbed `git`/`gh` and echoes the commands it invoked, one per
+# Runs a step with the stubbed `gh` and echoes the commands it invoked, one per
 # line. Records the exit code for `status_of` and the step's own output for
 # `output_of`. Step outputs written to $GITHUB_OUTPUT land in `outputs`.
 run_step() {
   local step_name="$1" tag="$2" tags="$3" fixture="$4"
   local release_exists="${5:-false}" create_result="${6:-ok}"
-  local edit_fails="${7:-false}" step_env="${8:-}"
-  local tags_per_page="${9:-100}" tags_api_fails="${10:-false}"
+  local edit_fails="${7:-false}" step_env="${8:-}" tags_api_fails="${9:-false}"
   local step
   step=$(extract_step "$step_name")
   rm -rf "$fixture"
@@ -190,7 +157,7 @@ run_step() {
   fi
 
   write_stubs "$fixture" "$tags" "$release_exists" "$create_result" \
-    "$edit_fails" "$tags_per_page" "$tags_api_fails"
+    "$edit_fails" "$tags_api_fails"
   : > "$fixture/outputs"
 
   (
@@ -205,7 +172,7 @@ run_step() {
     env PATH="$fixture/bin:$PATH" GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       GITHUB_OUTPUT="$fixture/outputs" TAG="$tag" \
       GITHUB_ACTION_PATH="$(dirname "$ACTION")" \
-      GITHUB_REPOSITORY="owner/repo" MAX_PAGES="${MAX_PAGES_OVERRIDE:-20}" \
+      GITHUB_REPOSITORY="owner/repo" MAX_PAGES="20" \
       $step_env \
       bash --noprofile --norc -e -o pipefail -c "$step" \
       > "$fixture/output" 2>&1
@@ -242,38 +209,17 @@ fail() {
 }
 
 # ---------------------------------------------------------------------------
-# The tag population every notes-base case resolves against.
+# Resolve release identity: wiring
 #
-# Mirrors the shapes the real repositories carry: two- and three-part versions,
-# dotted and dotless candidate ordinals, trailing suffixes, a version line with
-# no candidates, a sparse gap where a minor was never cut, and a line whose final
-# sits on a later commit than its last candidate.
+# The rules themselves are unit tested in Python. What the step adds is wiring:
+# the env the runner passes, the shipped script invoked via GITHUB_ACTION_PATH,
+# and the three outputs landing in $GITHUB_OUTPUT. One run per identity shape
+# proves that path end to end.
 # ---------------------------------------------------------------------------
-TAGS_MAIN=$(cat <<'EOF'
-v35.3
-v36.0-rc.1
-v36.0-rc.6-mega
-v36.0-rc.7-mega
-v36.0
-v36.1
-v37.0-rc.1
-v37.0-rc.3
-v37.0-rc.4
-EOF
-)
 
-# A line whose final names the same commit as its tip: the final is the better
-# base because it is the published boundary of that line.
-TAGS_COLOCATED=$(cat <<'EOF'
-v2.1.0-rc.1:sha-tip
-v2.1.0:sha-tip
-v2.1.1-rc.1
-v2.1.1-rc.2
-EOF
-)
-
-assert_notes_start() {
-  local description="$1" tag="$2" tags="$3" expected="$4"
+assert_identity() {
+  local description="$1" tag="$2" tags="$3"
+  local notes_start="$4" prerelease="$5" latest="$6"
   run_step "Resolve release identity" "$tag" "$tags" "$FIXTURES/identity" > /dev/null
 
   if [ "$(status_of "$FIXTURES/identity")" -ne 0 ]; then
@@ -282,207 +228,43 @@ assert_notes_start() {
     return
   fi
 
-  local actual
-  actual=$(step_output "$FIXTURES/identity" notes_start)
-  if [ "$actual" != "$expected" ]; then
-    fail "$description" "expected notes base '${expected:-<none>}', got '${actual:-<none>}'"
-    return
-  fi
-
-  # Ordering must come from the parsed version, so the step must never ask for a
-  # tag date to decide it.
-  if grep -qE 'for-each-ref|creatordate|taggerdate|--sort=-?committerdate' \
-    "$FIXTURES/identity/git.log" 2>/dev/null; then
-    fail "$description" "ordered tags by date rather than by parsed version"
-    return
-  fi
-
-  # Ancestry is not consulted: most release tags are unreachable from the default
-  # branch, so a merge-base or ancestry check would silently drop candidates.
-  if grep -qE 'merge-base|--is-ancestor|rev-list .*\.\.' \
-    "$FIXTURES/identity/git.log" 2>/dev/null; then
-    fail "$description" "consulted commit ancestry to pick the notes base"
-    return
-  fi
+  local key expected actual
+  for key in notes_start prerelease latest; do
+    case "$key" in
+      notes_start) expected="$notes_start" ;;
+      prerelease) expected="$prerelease" ;;
+      latest) expected="$latest" ;;
+    esac
+    actual=$(step_output "$FIXTURES/identity" "$key")
+    if [ "$actual" != "$expected" ]; then
+      fail "$description" "expected $key='${expected:-<none>}', got '${actual:-<unset>}'"
+      return
+    fi
+  done
 
   printf '  ok   %s\n' "$description"
 }
 
-echo "Notes base: candidate within its own line"
+echo "Resolve release identity: script wiring"
 
-# The common case: each candidate documents only what changed since the previous
-# candidate of the same version.
-assert_notes_start "candidate bases on the previous candidate" \
-  "v37.0-rc.4" "$TAGS_MAIN" "v37.0-rc.3"
-# Not rc.1: the highest lower candidate, not the lowest.
-assert_notes_start "candidate skips over a gap in ordinals" \
-  "v37.0-rc.3" "$TAGS_MAIN" "v37.0-rc.1"
-# A trailing suffix is a collision-avoidance marker, not a separate line.
-assert_notes_start "trailing suffix does not split the line" \
-  "v36.0-rc.7-mega" "$TAGS_MAIN" "v36.0-rc.6-mega"
-# Dotless and dotted ordinals are both in use and order together.
-assert_notes_start "dotless ordinal orders with dotted ones" \
-  "v1.0-rc2" "$(printf 'v0.9\nv1.0-rc1\nv1.0-rc2\n')" "v1.0-rc1"
+# A candidate whose line reaches back to a final co-located with its own tip:
+# exercises the commit field of the listing through the shipped script, and all
+# three outputs at once.
+assert_identity "candidate outputs land in GITHUB_OUTPUT" \
+  "v2.1.1-rc.1" \
+  "$(printf 'v2.1.0-rc.1:sha-tip\nv2.1.0:sha-tip\nv2.1.1-rc.1\n')" \
+  "v2.1.0" true false
 
-echo
-echo "Notes base: reaching back to the previous line"
+# The newest final: the other side of every flag.
+assert_identity "final outputs land in GITHUB_OUTPUT" \
+  "v2.2" "$(printf 'v2.1.0\nv2.2\n')" "v2.1.0" false true
 
-# The first candidate of a line has nothing below it in its own line, so it
-# reaches back -- and the previous line's final is the published boundary.
-assert_notes_start "first candidate reaches the previous line" \
-  "v36.0-rc.1" "$TAGS_MAIN" "v35.3"
-# Sparse numbering: v35.4 was never cut, so the highest lower line is v35.3.
-assert_notes_start "sparse numbering finds the highest lower line" \
-  "v35.5-rc.1" "$TAGS_MAIN" "v35.3"
-# A final has no candidates below it by definition, so it reaches back too.
-assert_notes_start "final reaches the previous line" \
-  "v2.2" "$(printf 'v2.1.0\nv2.1.1\nv2.2\n')" "v2.1.1"
-# The ordinary shape: the previous line's final was cut at the tip of its own
-# candidates, so it is the boundary. Reaching past it to a candidate would
-# re-describe commits that final already published.
-assert_notes_start "prefers the previous line's final over its last candidate" \
-  "v2.2" "$(printf 'v2.1.1-rc.1\nv2.1.1-rc.2:sha-211\nv2.1.1:sha-211\nv2.2\n')" "v2.1.1"
-# The line's final is preferred only when it names the same commit as the tip.
-assert_notes_start "prefers the previous line's final when co-located with its tip" \
-  "v2.1.1-rc.1" "$TAGS_COLOCATED" "v2.1.0"
-# v36.0 was cut before v36.0-rc.7-mega, so basing on the final would re-describe
-# everything the later candidates already covered.
-assert_notes_start "falls back to the tip when the final is stranded behind it" \
-  "v36.1" "$TAGS_MAIN" "v36.0-rc.7-mega"
-
-echo
-echo "Notes base: no lower line"
-
-# Omitted, not empty and not the tag itself: an empty boundary would make the
-# release API generate notes from the whole history.
-assert_notes_start "omits the base when nothing is below" \
-  "v1.0-rc.1" "$(printf 'v1.0-rc.1\n')" ""
-assert_notes_start "omits the base for the very first release" \
-  "v1.0" "$(printf 'v1.0\n')" ""
-# Only the pushed tag's own line exists, and reaching back must not find it.
-assert_notes_start "omits the base when only the same line exists" \
-  "v3.0-rc.2" "$(printf 'v3.0-rc.1\nv3.0-rc.2\n')" "v3.0-rc.1"
-
-echo
-echo "Notes base: two-part and three-part forms are one line"
-
-# v2.2 and v2.2.0 name the same version, so a candidate for one bases on the
-# other rather than reaching past it.
-assert_notes_start "three-part candidate bases on its two-part line-mate" \
-  "v2.2.0-rc.2" "$(printf 'v2.1.0\nv2.2-rc.1\nv2.2.0-rc.2\n')" "v2.2-rc.1"
-assert_notes_start "two-part final does not treat its three-part form as a lower line" \
-  "v2.2" "$(printf 'v2.1.0\nv2.2.0-rc.1\nv2.2\n')" "v2.2.0-rc.1"
-
-echo
-echo "Notes base: no tags are excluded from the pool"
-
-# Test and personal tags are ordinary members of the population. Excluding them
-# would make the base depend on who cut the tag.
-assert_notes_start "a suffixed personal tag is a valid base" \
-  "v99.0-rc.2-someone_test" \
-  "$(printf 'v98.0\nv99.0-rc.1-someone_test\nv99.0-rc.2-someone_test\n')" \
-  "v99.0-rc.1-someone_test"
-assert_notes_start "a suffixed final participates in line ordering" \
-  "v11.1-pltf" "$(printf 'v11.0\nv11.1-pltf\n')" "v11.0"
-# A tag whose object cannot be resolved must not end the run: the comparison it
-# feeds has a defined answer without it, and the version ordering is unaffected.
-# Both sides of that comparison are covered, since each is looked up separately.
-assert_notes_start "an unresolvable candidate object does not end the run" \
-  "v36.1" "$(printf 'v36.0-rc.7:!\nv36.0:sha-early\nv36.1\n')" "v36.0-rc.7"
-assert_notes_start "an unresolvable final object does not end the run" \
-  "v36.1" "$(printf 'v36.0-rc.7:sha-late\nv36.0:!\nv36.1\n')" "v36.0-rc.7"
-
-# Tags that are not versions are ignored rather than ordered.
-assert_notes_start "non-version tags are ignored, not ordered" \
-  "v2.1.0" "$(printf 'latest\nnightly\nrelease-please--branches--main\nv2.0.0\nv2.1.0\n')" \
-  "v2.0.0"
-# A retired YYYYMMDD.N scheme parses as a version with a very high major, so
-# without the required `v` those tags outrank every real release.
-assert_notes_start "a retired date-numbered scheme is not a version line" \
-  "v36.0-rc.1" "$(printf 'v35.3\n20250116.1\n20250116.0\nv36.0-rc.1\n')" "v35.3"
-
-# ---------------------------------------------------------------------------
-# Tag listing: bounded paging over the API
-# ---------------------------------------------------------------------------
-
-# Runs the resolve step with a page size small enough to force paging, and
-# reports the notes base together with how many pages were requested.
-assert_paging() {
-  local description="$1" tag="$2" tags="$3" per_page="$4"
-  local expected_base="$5" expected_pages="$6"
-  run_step "Resolve release identity" "$tag" "$tags" "$FIXTURES/paging" \
-    false ok false "" "$per_page" > /dev/null
-
-  if [ "$(status_of "$FIXTURES/paging")" -ne 0 ]; then
-    fail "$description" "step exited $(status_of "$FIXTURES/paging")" \
-      "output: $(output_of "$FIXTURES/paging" | tr '\n' '|')"
-    return
-  fi
-
-  local base pages
-  base=$(step_output "$FIXTURES/paging" notes_start)
-  pages=$(grep -c 'api .*tags' "$FIXTURES/paging/gh.log" 2>/dev/null || echo 0)
-
-  if [ "$base" != "$expected_base" ]; then
-    fail "$description" "expected base '${expected_base:-<none>}', got '${base:-<none>}'"
-    return
-  fi
-  if [ "$pages" != "$expected_pages" ]; then
-    fail "$description" "expected $expected_pages page request(s), made $pages"
-    return
-  fi
-  printf '  ok   %s\n' "$description"
-}
-
-echo
-echo "Tag listing: bounded paging"
-
-# A page containing a version below the pushed tag's settles the answer.
-assert_paging "stops once a lower version is on the page" \
-  "v9.0-rc.2" \
-  "$(printf 'v1.0\nv2.0\nv3.0\nv4.0\nv5.0\nv8.0\nv9.0-rc.1\nv9.0-rc.2\n')" \
-  3 "v9.0-rc.1" 1
-# The listing is newest-first, so a version with only same-line company at the
-# head takes another page before a lower one appears.
-assert_paging "pages until a lower version appears" \
-  "v9.0" \
-  "$(printf 'v1.0\nv8.0\nv9.0-rc.1\nv9.0-rc.2\nv9.0\n')" \
-  2 "v9.0-rc.2" 2
-# Exhausting the listing with no lower version is the "nothing below" case. The
-# empty page that ends the listing is a request too.
-assert_paging "exhausting the listing with no lower version omits the base" \
-  "v1.0-rc.1" "$(printf 'v1.0-rc.1\n')" 100 "" 2
-
-# A partial tag list must not produce a notes base.
-assert_page_cap_fails_loudly() {
-  local description="$1"
-  # Every tag within reach of the cap is in the pushed tag's own version, so no
-  # page the run is allowed to fetch settles the answer.
-  local many
-  many=$(for i in $(seq 8 -1 1); do printf 'v9.0-rc.%d\n' "$i"; done)
-  MAX_PAGES_OVERRIDE=2 run_step "Resolve release identity" "v9.0" \
-    "$(printf 'v1.0\n%s\nv9.0\n' "$many")" "$FIXTURES/cap" false ok false "" 1 > /dev/null
-
-  if [ "$(status_of "$FIXTURES/cap")" -eq 0 ]; then
-    fail "$description" "step succeeded on a partial tag list" \
-      "base: $(step_output "$FIXTURES/cap" notes_start)"
-    return
-  fi
-  if ! grep -q "^::error::.*limit" "$FIXTURES/cap/output" 2>/dev/null; then
-    fail "$description" "no ::error:: annotation naming the limit" \
-      "output: $(output_of "$FIXTURES/cap" | tr '\n' '|')"
-    return
-  fi
-  printf '  ok   %s\n' "$description"
-}
-
-assert_page_cap_fails_loudly "hitting the page limit fails instead of guessing"
-
-# A failed listing is not an empty repository.
+# A failed listing is not an empty repository, and the script's exit code and
+# annotation must both survive the step wiring.
 assert_listing_failure_fails() {
   local description="$1"
   run_step "Resolve release identity" "v37.0" "$(printf 'v36.0\nv37.0\n')" \
-    "$FIXTURES/apifail" false ok false "" 100 true > /dev/null
+    "$FIXTURES/apifail" false ok false "" true > /dev/null
 
   if [ "$(status_of "$FIXTURES/apifail")" -eq 0 ]; then
     fail "$description" "step succeeded despite the tag listing failing" \
@@ -496,7 +278,7 @@ assert_listing_failure_fails() {
   printf '  ok   %s\n' "$description"
 }
 
-assert_listing_failure_fails "a failed tag listing fails the run"
+assert_listing_failure_fails "a failed tag listing fails the step"
 
 # Reading tags locally would make identity depend on fetch depth.
 echo
@@ -508,53 +290,11 @@ else
   printf '  ok   %s\n' "tags come from the API, not the local repository"
 fi
 
-# ---------------------------------------------------------------------------
-# Prerelease
-# ---------------------------------------------------------------------------
-
-assert_prerelease() {
-  local description="$1" tag="$2" expected="$3"
-  run_step "Resolve release identity" "$tag" "$(printf '%s\n' "$tag")" \
-    "$FIXTURES/identity" > /dev/null
-
-  if [ "$(status_of "$FIXTURES/identity")" -ne 0 ]; then
-    fail "$description" "step exited $(status_of "$FIXTURES/identity")" \
-      "output: $(output_of "$FIXTURES/identity" | tr '\n' '|')"
-    return
-  fi
-
-  local actual
-  actual=$(step_output "$FIXTURES/identity" prerelease)
-  if [ "$actual" != "$expected" ]; then
-    fail "$description" "expected prerelease=$expected, got '${actual:-<unset>}'"
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
+# The flags are decided from the tag, not by the caller: no input may override
+# them. Reporting the resolved values as outputs is fine, so only the inputs
+# block is examined.
 echo
-echo "Prerelease flag"
-
-assert_prerelease "dotted ordinal is a prerelease"          "v37.0-rc.4"            true
-assert_prerelease "dotless ordinal is a prerelease"          "v1.0-rc1"              true
-assert_prerelease "suffixed candidate is a prerelease"       "v36.0-rc.7-mega"       true
-assert_prerelease "personal suffixed candidate"              "v99.0-rc.1-someone_test"  true
-assert_prerelease "three-part candidate is a prerelease"     "v2.1.1-rc.2"           true
-assert_prerelease "two-part final is not a prerelease"       "v37.0"                 false
-assert_prerelease "three-part final is not a prerelease"     "v2.1.1"                false
-assert_prerelease "suffixed final is not a prerelease"       "v11.1-pltf"            false
-# The pattern is anchored on an ordinal: a branch-name suffix that merely
-# contains "rc" is not a release candidate.
-assert_prerelease "an rc marker with no ordinal is not a prerelease" \
-  "v27.1-rc.pen-test-fixes" false
-assert_prerelease "rc inside an unrelated word does not match"  "v4.0-arch"          false
-
-# The flag is decided from the tag, not by the caller: no input may override it.
-# Reporting the resolved value as an output is fine, so only the inputs block is
-# examined.
-echo
-echo "Prerelease is not caller-overridable"
+echo "Identity is not caller-overridable"
 declared_inputs=$(sed -n '/^inputs:/,/^[a-z]/p' "$ACTION" | grep -E '^  [a-z_]+:')
 if grep -qiE '(prerelease|is_prerelease|latest|notes)' <<< "$declared_inputs"; then
   fail "no caller override input for the release flags" \
@@ -562,66 +302,6 @@ if grep -qiE '(prerelease|is_prerelease|latest|notes)' <<< "$declared_inputs"; t
 else
   printf '  ok   %s\n' "no caller override input for the release flags"
 fi
-
-# ---------------------------------------------------------------------------
-# Latest
-# ---------------------------------------------------------------------------
-
-assert_latest() {
-  local description="$1" tag="$2" tags="$3" expected="$4"
-  run_step "Resolve release identity" "$tag" "$tags" "$FIXTURES/identity" > /dev/null
-
-  if [ "$(status_of "$FIXTURES/identity")" -ne 0 ]; then
-    fail "$description" "step exited $(status_of "$FIXTURES/identity")" \
-      "output: $(output_of "$FIXTURES/identity" | tr '\n' '|')"
-    return
-  fi
-
-  local actual
-  actual=$(step_output "$FIXTURES/identity" latest)
-  if [ -z "$actual" ]; then
-    # Omitting the flag lets the API fall back to publish order, which is what
-    # put the wrong release under "Latest" in the first place.
-    fail "$description" "latest was not set at all; it must always be explicit"
-    return
-  fi
-  if [ "$actual" != "$expected" ]; then
-    fail "$description" "expected latest=$expected, got '$actual'"
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
-echo
-echo "Latest flag"
-
-# A final with nothing final above it is the newest release of the product.
-assert_latest "newest final claims latest" \
-  "v37.0" "$(printf 'v36.0\nv36.1\nv37.0\n')" true
-# Re-cutting an older patch must not drag "Latest" backwards.
-assert_latest "older final declines latest" \
-  "v36.1" "$(printf 'v36.0\nv36.1\nv37.0\n')" false
-# A candidate is never the latest release, even when it sorts above every final.
-assert_latest "candidate above every final still declines" \
-  "v38.0-rc.1" "$(printf 'v37.0\nv38.0-rc.1\n')" false
-assert_latest "candidate declines even as the only tag" \
-  "v1.0-rc.1" "$(printf 'v1.0-rc.1\n')" false
-# The first final of a repository is the latest by definition.
-assert_latest "first final claims latest" \
-  "v1.0" "$(printf 'v1.0\n')" true
-# Candidates above it are not finals, so they do not block the claim.
-assert_latest "candidates above a final do not block its claim" \
-  "v37.0" "$(printf 'v37.0\nv38.0-rc.1\n')" true
-# A patch on the newest line is the newest final.
-assert_latest "newest patch claims latest" \
-  "v37.1" "$(printf 'v37.0\nv37.1\n')" true
-# Suffixed finals are ordinary finals for this comparison.
-assert_latest "a suffixed final blocks a lower final's claim" \
-  "v11.0" "$(printf 'v11.0\nv11.1-pltf\n')" false
-# Read as versions, the retired scheme's tags sit above every real release.
-assert_latest "a retired date-numbered scheme does not block the claim" \
-  "v36.1" "$(printf 'v36.0\nv36.1\n20250116.1\n')" true
 
 # ---------------------------------------------------------------------------
 # Create or update release
