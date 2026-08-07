@@ -9,7 +9,10 @@ that names nothing else. Standard library only.
 import os
 import sys
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any, NoReturn
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 import github_api
 

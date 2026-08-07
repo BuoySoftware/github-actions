@@ -89,7 +89,7 @@ run_step() {
     # pipefail`. Step output goes to a file so stdout stays free for the
     # request log.
     env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
-      GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
+      GITHUB_REF_NAME="$tag" TAG="$tag" GH_TOKEN="stub" \
       GITHUB_ACTION_PATH="$SCRIPT_DIR" \
       GITHUB_REPOSITORY="owner/repo" \
       STRUCTURE_SQL_PATH="db/structure.sql" \

@@ -1,4 +1,14 @@
 name: Slack Notification
+description: |
+  Sends a Slack message reflecting the run's conclusion, silently skipping it
+  on success unless send_all_notifications is set.
+
+  Call this from a terminal job (`needs:` every job that matters, with
+  `if: always()`), never from a step inside the job whose failure it should
+  report. The conclusion is aggregated from jobs that have already completed;
+  the job this step runs in is still in progress, so its own failed steps are
+  invisible -- an in-job call reports success for exactly the failure it was
+  added to announce.
 
 inputs:
   send_all_notifications:
@@ -13,10 +23,12 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: technote-space/workflow-conclusion-action@v3
+    # Third parties pinned to commits: a moved tag here runs unreviewed code
+    # inside every caller's failure path.
+    - uses: technote-space/workflow-conclusion-action@45ce8e0eb155657ab8ccf346ade734257fd196a5 # v3.0.3
 
     - name: Determine Status
-      uses: haya14busa/action-cond@v1
+      uses: haya14busa/action-cond@94f77f7a80cd666cb3155084e428254fea4281fd # v1.2.1
       id: status
       with:
         cond: ${{ env.WORKFLOW_CONCLUSION == 'success' }}
@@ -24,7 +36,7 @@ runs:
         if_false: "failure"
 
     - name: Determine Fields
-      uses: haya14busa/action-cond@v1
+      uses: haya14busa/action-cond@94f77f7a80cd666cb3155084e428254fea4281fd # v1.2.1
       id: fields
       with:
         cond: ${{ github.event_name != 'pull_request' }}
@@ -33,7 +45,7 @@ runs:
 
     - name: Slack Notification
       if: ${{ inputs.send_all_notifications == 'true' || steps.status.outputs.value == 'failure' }}
-      uses: 8398a7/action-slack@v3
+      uses: 8398a7/action-slack@77eaa4f1c608a7d68b38af4e3f739dcd8cba273e # v3.19.0
       with:
         status: ${{ steps.status.outputs.value }}
         fields: ${{ steps.fields.outputs.value }}

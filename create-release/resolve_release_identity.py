@@ -18,6 +18,8 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import NoReturn
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
 import github_api
 
 # Two or three dot-separated numbers, an optional release-candidate ordinal, and

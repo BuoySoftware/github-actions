@@ -54,7 +54,9 @@ runs:
 
   steps:
     - name: Install Node
-      uses: BuoySoftware/github-actions/setup-node@main
+      # Pinned like every external consumer pins this repo: an intra-repo
+      # branch ref would let main reach "pinned" callers through this edge.
+      uses: BuoySoftware/github-actions/setup-node@975f380abe5471219469f448c84b02061fbae770 # v1.0.1
       with:
         node-version: ${{ inputs.node_version }}
         find-node-version: ${{ inputs.node_version == '' && 'true' || 'false' }}
@@ -116,8 +118,11 @@ runs:
         echo "✅ structure.sql generated successfully"
       shell: bash
 
+    # Gated on the event, not the ref: a workflow_dispatch can be launched
+    # against a tag, which makes github.ref a refs/tags/ ref while the run is
+    # not a tag push -- and must not touch the tag's release.
     - name: Upload to GitHub Release
-      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      if: ${{ inputs.upload_to_release == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
       env:
         GH_TOKEN: ${{ github.token }}
         STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
@@ -125,11 +130,14 @@ runs:
       shell: bash
 
     - name: Verify release asset
-      if: ${{ inputs.upload_to_release == 'true' && startsWith(github.ref, 'refs/tags/') }}
+      if: ${{ inputs.upload_to_release == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
       env:
         GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
         STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
-      run: python3 "$GITHUB_ACTION_PATH/verify_release_asset.py"
+      run: |
+        EXPECT="$(basename "$STRUCTURE_SQL_PATH")" \
+          python3 "$GITHUB_ACTION_PATH/../verify-release-assets/verify_release_assets.py"
       shell: bash
 
     - name: Upload as workflow artifact
