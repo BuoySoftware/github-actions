@@ -101,6 +101,11 @@ runs:
 
     - name: Install yarn dependencies (Yarn Berry)
       if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
+      env:
+        # Yarn Berry resolves ${GITHUB_PACKAGES_TOKEN} in .yarnrc.yml from the
+        # process environment and fails hard when it is unset. Fall back to a
+        # job-level value so an empty input does not mask one the caller set.
+        GITHUB_PACKAGES_TOKEN: ${{ inputs.github_packages_token || env.GITHUB_PACKAGES_TOKEN }}
       run: yarn install --immutable
       shell: bash
       working-directory: ${{ inputs.working-directory }}
