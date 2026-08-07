@@ -20,4 +20,8 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.ty.src]
-include = ["create-release"]
+include = ["create-release", "generate-structure-sql", "verify-release-assets", "lib"]
+
+[tool.ty.environment]
+# The shared client lives in lib/; scripts put it on sys.path at run time.
+extra-paths = ["lib"]

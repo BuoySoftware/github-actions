@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import quote
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
 import github_api
 
 

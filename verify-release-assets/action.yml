@@ -1,0 +1,36 @@
+name: Verify release assets
+description: |
+  Fails the run when an expected asset is missing from the pushed tag's
+  release. The assertion reads the release's actual asset list, not job
+  results, so a job that exited zero without attaching anything is still
+  caught -- the failure mode where a release looks complete and is not.
+
+  `expect` names the assets, one per line: an exact file name, or a
+  `*`-pattern for producers that name their own output (`*.spdx.json`).
+  Derive the list from which jobs actually ran, so a deliberately absent
+  producer does not fail every push.
+
+  Prerequisites (caller must provide):
+  - A tag push. The tag is read from github.ref_name.
+  - A token able to read releases.
+  - python3 on PATH. No checkout is needed.
+
+inputs:
+  token:
+    description: "Token with permission to read releases"
+    required: true
+  expect:
+    description: "Expected asset names, one per line; `*`-patterns allowed"
+    required: true
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Assert every expected asset is attached
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        TAG: ${{ github.ref_name }}
+        EXPECT: ${{ inputs.expect }}
+      run: python3 "$GITHUB_ACTION_PATH/verify_release_assets.py"
+      shell: bash

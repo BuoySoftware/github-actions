@@ -29,8 +29,8 @@ jobs:
           RUFF: ruff@0.16.1
           TY: ty@0.0.66
         run: |
-          uvx "$RUFF" format --check create-release/
-          uvx "$RUFF" check create-release/
+          uvx "$RUFF" format --check .
+          uvx "$RUFF" check .
           uvx "$TY" check
         shell: bash
 
