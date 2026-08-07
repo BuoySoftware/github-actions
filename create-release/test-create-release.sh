@@ -487,11 +487,11 @@ assert_reports_edit_failure "fails when the flags cannot be corrected" "v38.3-rc
 
 echo
 echo "generate-structure-sql is untouched"
-SIBLING="$(cd "$SCRIPT_DIR/.." && pwd)/generate-structure-sql/action.yml"
-if ! grep -q "name: Upload to GitHub Release" "$SIBLING" 2>/dev/null; then
+SIBLING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/generate-structure-sql"
+if ! grep -q "name: Upload to GitHub Release" "$SIBLING_DIR/action.yml" 2>/dev/null; then
   fail "generate-structure-sql still creates releases" \
     "its Upload to GitHub Release step is gone; nothing is cutting releases yet"
-elif ! grep -q "gh release create" "$SIBLING" 2>/dev/null; then
+elif ! grep -q "def created_release" "$SIBLING_DIR/attach_structure_sql.py" 2>/dev/null; then
   fail "generate-structure-sql still creates releases" \
     "it no longer creates a missing release"
 else
