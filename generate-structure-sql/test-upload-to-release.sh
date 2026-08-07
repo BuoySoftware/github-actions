@@ -156,104 +156,25 @@ assert_uploads_idempotently() {
   printf '  ok   %s\n' "$description"
 }
 
-# Tags are pushed without a release being cut first, so a missing release must be
-# created rather than failing the run. The asset is the point of the job; a tag
-# with no release still needs its schema dump attached.
-assert_creates_release_then_attaches() {
-  local description="$1" tag="$2" expected_prerelease="$3"
+# create-release cuts the release before any artifact job runs, so a missing
+# release means the run is misconfigured. Failing loudly beats publishing a
+# release with an identity this script would have to invent.
+assert_fails_without_release() {
+  local description="$1" tag="$2"
   local log
   log=$(run_step "$tag" false "$FIXTURES/upload")
-
-  if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
-    printf '  FAIL %s (step exited %s with no release present)\n' \
-      "$description" "$(status_of "$FIXTURES/upload")"
-    printf '       output: %s\n' "$(output_of "$FIXTURES/upload" | tr '\n' '|')"
-    failures=$((failures + 1))
-    return
-  fi
-
-  local create_line
-  create_line=$(grep "^POST /repos/owner/repo/releases " <<< "$log")
-  if [ -z "$create_line" ]; then
-    printf '  FAIL %s (did not create the missing release)\n' "$description"
-    printf '       requests: %s\n' "${log//$'\n'/ | }"
-    failures=$((failures + 1))
-    return
-  fi
-
-  # A prerelease tag must not be published as a final release, and vice versa.
-  if ! grep -q -- "\"prerelease\": $expected_prerelease" <<< "$create_line"; then
-    printf '  FAIL %s (expected prerelease=%s)\n' "$description" "$expected_prerelease"
-    printf '       create request: %s\n' "$create_line"
-    failures=$((failures + 1))
-    return
-  fi
-
-  if ! grep -q "^POST /uploads/releases/.*name=structure.sql" <<< "$log"; then
-    printf '  FAIL %s (did not attach after creating)\n' "$description"
-    printf '       requests: %s\n' "${log//$'\n'/ | }"
-    failures=$((failures + 1))
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
-echo "Upload to GitHub Release"
-
-# The release already exists, which is the only case that occurs in practice.
-# A re-run finds its own earlier asset and must replace it.
-assert_uploads_idempotently "existing release, no asset yet"      "v37.0-rc.1" ""
-assert_uploads_idempotently "existing release, replaces its own"  "v37.0" "structure.sql"
-assert_uploads_idempotently "existing release, other assets"      "v37.0" "checksums.txt"
-
-assert_creates_release_then_attaches "missing release, RC tag"        "v38.0-rc.1" true
-assert_creates_release_then_attaches "missing release, final tag"     "v38.0"      false
-# Tags observed in the wild that the release-cutting step never got to.
-assert_creates_release_then_attaches "missing release, patch tag"     "v36.1"      false
-# `-rc1` without a dot is still a release candidate.
-assert_creates_release_then_attaches "missing release, dotless RC"    "v1.0-rc1"   true
-
-# Two jobs racing to cut the same release must not fail the run: the asset still
-# has somewhere to land.
-assert_survives_concurrent_create() {
-  local description="$1" tag="$2"
-  local log
-  log=$(run_step "$tag" false "$FIXTURES/upload" "Upload to GitHub Release" "" race)
-
-  if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
-    printf '  FAIL %s (step exited %s after losing the create race)\n' \
-      "$description" "$(status_of "$FIXTURES/upload")"
-    printf '       output: %s\n' "$(output_of "$FIXTURES/upload" | tr '\n' '|')"
-    failures=$((failures + 1))
-    return
-  fi
-
-  if ! grep -q "^POST /uploads/releases/.*name=structure.sql" <<< "$log"; then
-    printf '  FAIL %s (did not attach after losing the create race)\n' "$description"
-    printf '       requests: %s\n' "${log//$'\n'/ | }"
-    failures=$((failures + 1))
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
-echo
-echo "Concurrent release creation"
-assert_survives_concurrent_create "another job cut the release first" "v38.1-rc.1"
-
-# A create that fails for any reason other than the race ends the run, and the
-# reason the API gave has to reach the annotation.
-assert_reports_create_failure() {
-  local description="$1" tag="$2"
-  local log
-  log=$(run_step "$tag" false "$FIXTURES/upload" "Upload to GitHub Release" "" hard)
   local output
   output=$(output_of "$FIXTURES/upload")
 
   if [ "$(status_of "$FIXTURES/upload")" -eq 0 ]; then
-    printf '  FAIL %s (step succeeded despite no release)\n' "$description"
+    printf '  FAIL %s (step succeeded with no release present)\n' "$description"
+    printf '       requests: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if grep -qE "^POST /repos/owner/repo/releases " <<< "$log"; then
+    printf '  FAIL %s (created a release; create-release owns creation)\n' "$description"
     printf '       requests: %s\n' "${log//$'\n'/ | }"
     failures=$((failures + 1))
     return
@@ -268,8 +189,8 @@ assert_reports_create_failure() {
 
   # Same line, not merely the same log: only annotation text reaches the run
   # summary and the checks UI.
-  if ! grep -q "^::error::.*Resource not accessible by integration" <<< "$output"; then
-    printf '  FAIL %s (create failure reason not inside the ::error:: annotation)\n' \
+  if ! grep -q "^::error::No release exists for $tag" <<< "$output"; then
+    printf '  FAIL %s (missing release not reported inside the ::error:: annotation)\n' \
       "$description"
     printf '       output: %s\n' "${output//$'\n'/ | }"
     failures=$((failures + 1))
@@ -279,9 +200,18 @@ assert_reports_create_failure() {
   printf '  ok   %s\n' "$description"
 }
 
+echo "Upload to GitHub Release"
+
+# The release already exists, which create-release guarantees on every push.
+# A re-run finds its own earlier asset and must replace it.
+assert_uploads_idempotently "existing release, no asset yet"      "v37.0-rc.1" ""
+assert_uploads_idempotently "existing release, replaces its own"  "v37.0" "structure.sql"
+assert_uploads_idempotently "existing release, other assets"      "v37.0" "checksums.txt"
+
 echo
-echo "Unrecoverable create failure"
-assert_reports_create_failure "reports why the create failed" "v38.2"
+echo "Missing release"
+assert_fails_without_release "fails when the release does not exist" "v38.0-rc.1"
+assert_fails_without_release "fails for a final tag too"             "v38.0"
 
 assert_verify() {
   local description="$1" expected="$2" attached_assets="$3"

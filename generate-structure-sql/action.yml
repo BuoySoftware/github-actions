@@ -45,7 +45,7 @@ inputs:
     default: "false"
     required: false
   upload_to_release:
-    description: "Upload structure.sql to the GitHub Release (requires tag push)"
+    description: "Upload structure.sql to the GitHub Release (requires a tag push and an existing release)"
     default: "false"
     required: false
 
