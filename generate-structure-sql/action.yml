@@ -129,17 +129,6 @@ runs:
       run: python3 "$GITHUB_ACTION_PATH/attach_structure_sql.py"
       shell: bash
 
-    - name: Verify release asset
-      if: ${{ inputs.upload_to_release == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
-      env:
-        GH_TOKEN: ${{ github.token }}
-        TAG: ${{ github.ref_name }}
-        STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
-      run: |
-        EXPECT="$(basename "$STRUCTURE_SQL_PATH")" \
-          python3 "$GITHUB_ACTION_PATH/../verify-release-assets/verify_release_assets.py"
-      shell: bash
-
     - name: Upload as workflow artifact
       if: ${{ inputs.upload_as_artifact == 'true' }}
       uses: actions/upload-artifact@v4

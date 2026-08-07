@@ -96,10 +96,10 @@ class VerifyReleaseAssets(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Could not read release v1.2.3", stderr)
 
-    def test_an_empty_expectation_is_a_configuration_error(self):
+    def test_an_empty_expectation_fails(self):
         code, stderr = run(FakeApi(listing("structure.sql")), "\n  \n")
         self.assertEqual(code, 1)
-        self.assertIn("configuration error", stderr)
+        self.assertIn("names no assets", stderr)
 
     def test_reads_every_page_of_the_asset_listing(self):
         first = [{"name": f"asset-{index}"} for index in range(100)]

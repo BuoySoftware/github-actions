@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""A stand-in GitHub API for the shell harness, serving one fixture directory.
+"""The create-release harness's stand-in GitHub API, serving one fixture dir.
 
-Every request is appended to `requests.log` as `METHOD path body`, which is
-what the harness assertions read. The fixture directory configures the
-responses:
+Routes on top of the shared skeleton in lib/fake_github.py. The fixture
+configures the responses:
   tags            one `name` or `name:sha` per line, oldest first; served
                   newest-first as the API does, honouring page/per_page
   release_exists  `true` when the release lookup should find one
   create_result   `ok`, `race` (rejected, release then present) or `hard`
   edit_fails      `true` when the flag correction should be rejected
-
-Once listening, the chosen port is written to `port`.
 
 Usage: python3 create-release/fake_github.py <fixture-dir>
 """
@@ -18,67 +15,47 @@ Usage: python3 create-release/fake_github.py <fixture-dir>
 import json
 import re
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-FIXTURE = Path(sys.argv[1])
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+import fake_github
 
 
-def setting(name: str, fallback: str = "false") -> str:
-    path = FIXTURE / name
-    return path.read_text().strip() if path.exists() else fallback
-
-
-def tag_entries() -> list[dict]:
-    entries = []
-    for line in (FIXTURE / "tags").read_text().splitlines():
-        if not line:
-            continue
-        name, _, sha = line.partition(":")
-        entries.append({"name": name, "commit": {"sha": sha or f"sha-{name}"}})
-    entries.reverse()
-    return entries
-
-
-class Handler(BaseHTTPRequestHandler):
+class Handler(fake_github.Handler):
     # Whether the release exists, flipped by a lost race so the re-check that
     # follows finds the winner's release.
     exists = False
 
-    def _reply(self, status: int, body: dict | list) -> None:
-        raw = json.dumps(body).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _log_request(self) -> str:
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode() if length else ""
-        with (FIXTURE / "requests.log").open("a") as log:
-            print(f"{self.command} {self.path} {body}", file=log)
-        return body
+    def tag_entries(self) -> list[dict]:
+        entries = []
+        for line in (self.fixture / "tags").read_text().splitlines():
+            if not line:
+                continue
+            name, _, sha = line.partition(":")
+            entries.append({"name": name, "commit": {"sha": sha or f"sha-{name}"}})
+        entries.reverse()
+        return entries
 
     def do_GET(self) -> None:
         self._log_request()
         url = urlparse(self.path)
 
         if re.fullmatch(r"/repos/[^/]+/[^/]+/tags", url.path):
-            if setting("tags_api_fails") == "true":
+            if self.setting("tags_api_fails") == "true":
                 self._reply(502, {"message": "Bad gateway"})
                 return
             query = parse_qs(url.query)
             page = int(query.get("page", ["1"])[0])
             per_page = int(query.get("per_page", ["30"])[0])
-            entries = tag_entries()
+            entries = self.tag_entries()
             start = (page - 1) * per_page
             self._reply(200, entries[start : start + per_page])
             return
 
         if re.fullmatch(r"/repos/[^/]+/[^/]+/releases/tags/[^/]+", url.path):
-            if setting("release_exists") == "true" or Handler.exists:
+            if self.setting("release_exists") == "true" or Handler.exists:
                 self._reply(200, {"id": 1234})
             else:
                 self._reply(404, {"message": "Not Found"})
@@ -97,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if re.fullmatch(r"/repos/[^/]+/[^/]+/releases", url.path):
-            result = setting("create_result", "ok")
+            result = self.setting("create_result", "ok")
             if result == "race":
                 Handler.exists = True
                 self._reply(
@@ -124,20 +101,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PATCH(self) -> None:
         self._log_request()
-        if setting("edit_fails") == "true":
+        if self.setting("edit_fails") == "true":
             self._reply(422, {"message": "Validation Failed"})
             return
         self._reply(200, {"id": 1234})
 
-    def log_message(self, format: str, *args: object) -> None:
-        pass
-
-
-def main() -> None:
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    (FIXTURE / "port").write_text(str(server.server_port))
-    server.serve_forever()
-
 
 if __name__ == "__main__":
-    main()
+    fake_github.serve(Handler, Path(sys.argv[1]))

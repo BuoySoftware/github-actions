@@ -23,15 +23,6 @@ def fail(message: str) -> NoReturn:
     sys.exit(1)
 
 
-def release_for(repository: str, tag: str) -> dict | None:
-    status, release = github_api.request(
-        "GET", f"/repos/{repository}/releases/tags/{tag}"
-    )
-    if status == HTTPStatus.OK and isinstance(release, dict):
-        return release
-    return None
-
-
 def attach(repository: str, release: dict, path: Path) -> None:
     """Upload the file to the release, replacing a same-named earlier asset."""
     name = path.name
@@ -57,7 +48,7 @@ def main() -> None:
     repository = os.environ["GITHUB_REPOSITORY"]
     path = Path(os.environ["STRUCTURE_SQL_PATH"])
 
-    release = release_for(repository, tag)
+    release = github_api.release_for(repository, tag)
     if release is None:
         fail(
             f"No release exists for {tag}: create-release cuts the release "

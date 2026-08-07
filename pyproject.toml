@@ -14,6 +14,8 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "PL", "PTH", "C4"]
 [tool.ruff.lint.per-file-ignores]
 # Test bodies assert on private helpers and repeat literals by design.
 "*/test_*.py" = ["PLR2004", "SLF001"]
+# http.server dispatches on `do_<VERB>` method names.
+"*/fake_github.py" = ["N802"]
 
 [tool.ruff.format]
 quote-style = "double"
