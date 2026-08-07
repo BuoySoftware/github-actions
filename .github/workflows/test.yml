@@ -7,6 +7,60 @@ on:
       - main
 
 jobs:
+  python-checks:
+    name: Python format, lint and types
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Pinned to a commit rather than a tag: a tag can be moved, and this step
+      # fetches and runs the tooling the checks depend on.
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      # Development tooling only. What ships is the script, run by the
+      # interpreter the runner already carries, so nothing here is installed at
+      # job time.
+      #
+      # The tools are pinned so a new release cannot fail a run that changed
+      # nothing.
+      - name: Format, lint and typecheck
+        env:
+          RUFF: ruff@0.16.1
+          TY: ty@0.0.66
+        run: |
+          uvx "$RUFF" format --check create-release/
+          uvx "$RUFF" check create-release/
+          uvx "$TY" check
+        shell: bash
+
+  python-tests:
+    name: Python tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # No setup-python step, and deliberately not uv's interpreter: the tests
+      # run on the same python3 the action gets on a runner, so a version
+      # difference fails here rather than at release time.
+      - name: Run Python tests
+        run: |
+          shopt -s nullglob
+          tests=(*/test_*.py)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::No Python test scripts found"
+            exit 1
+          fi
+          status=0
+          for test in "${tests[@]}"; do
+            echo "::group::$test"
+            python3 "$test" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+        shell: bash
+
   shell-tests:
     name: Shell tests
     runs-on: ubuntu-latest

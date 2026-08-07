@@ -1,0 +1,84 @@
+name: Create release
+description: |
+  Creates the GitHub release for a pushed version tag with a correct identity:
+  release notes generated from the right lower boundary, the prerelease flag
+  derived from the tag itself, and the "Latest" flag always stated explicitly.
+
+  When the release already exists -- because a tag push raced another job, or
+  because someone cut it by hand -- the release is left in place and its
+  prerelease and "Latest" flags are corrected instead. The correction is scoped
+  to those two fields, so notes, title and target survive it, as do any assets
+  already attached.
+
+  Release identity is derived entirely from the repository's tag list. Nothing
+  else about the release depends on the caller, and there is no input to
+  override the flags: two callers reading the same tag would otherwise publish
+  contradictory releases.
+
+  Prerequisites (caller must provide):
+  - A tag push. The pushed tag is read from github.ref_name.
+  - A token with permission to list tags and to create and edit releases.
+  - python3 on PATH, the one prerequisite beyond a shell. Everything else
+    that GitHub-hosted runners preinstall and self-hosted images may not --
+    the gh CLI included -- is deliberately not used.
+
+  No checkout, database, CLI or dependency install is needed: the tag list and
+  the commit each tag names both come from the tag listing, and the release is
+  created and corrected over the REST API. Keeping that failure surface small
+  is what makes it safe to gate other jobs on this one.
+
+  Both steps run on the interpreter the runner already carries, using the
+  standard library only. A third-party import would add a setup step to every
+  caller.
+
+  A version tag carries two or three dot-separated numbers, optionally followed
+  by a release-candidate ordinal (`-rc.4` or `-rc4`) and optionally by a trailing
+  suffix. The numbers are ranked left to right, and nothing here depends on what
+  a repository calls them, so the two-part and three-part schemes both in use are
+  ordered correctly.
+
+  An absent third number counts as zero, so `v2.2` and `v2.2.0` are one version.
+  Trailing suffixes carry no ordering information. The leading `v` is required,
+  which keeps a retired all-digit tag scheme from being read as very high
+  versions.
+
+inputs:
+  token:
+    description: "Token with permission to create and edit releases"
+    required: true
+
+outputs:
+  latest:
+    description: "Whether this release was published as Latest"
+    value: ${{ steps.identity.outputs.latest }}
+  notes_start:
+    description: "Tag the release notes were generated from, empty if none applied"
+    value: ${{ steps.identity.outputs.notes_start }}
+  prerelease:
+    description: "Whether the pushed tag is a release candidate"
+    value: ${{ steps.identity.outputs.prerelease }}
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Resolve release identity
+      id: identity
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        MAX_PAGES: "20"
+        TAG: ${{ github.ref_name }}
+      run: python3 "$GITHUB_ACTION_PATH/resolve_release_identity.py"
+      shell: bash
+
+    - name: Create or update release
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        LATEST: ${{ steps.identity.outputs.latest }}
+        NOTES_START: ${{ steps.identity.outputs.notes_start }}
+        PRERELEASE: ${{ steps.identity.outputs.prerelease }}
+        TAG: ${{ github.ref_name }}
+      run: python3 "$GITHUB_ACTION_PATH/create_or_update_release.py"
+      shell: bash

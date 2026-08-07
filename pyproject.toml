@@ -1,0 +1,23 @@
+# Tooling configuration only. Actions here are not a Python package: their
+# scripts run on the interpreter the runner already carries, with no install
+# step, so there is nothing to build or publish.
+
+[tool.ruff]
+line-length = 88
+# The runner's interpreter. Checking against a newer one would allow syntax that
+# fails at job time.
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "PL", "PTH", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test bodies assert on private helpers and repeat literals by design.
+"*/test_*.py" = ["PLR2004", "SLF001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.src]
+include = ["create-release"]
