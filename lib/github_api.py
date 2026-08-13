@@ -9,6 +9,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+from http import HTTPStatus
 from typing import Any
 
 
@@ -83,3 +84,11 @@ def _decode(raw: bytes) -> Any:
         return json.loads(raw)
     except json.JSONDecodeError:
         return {"message": raw.decode(errors="replace")}
+
+
+def release_for(repository: str, tag: str) -> dict | None:
+    """The tag's release, or None when the lookup does not cleanly find one."""
+    status, release = request("GET", f"/repos/{repository}/releases/tags/{tag}")
+    if status == HTTPStatus.OK and isinstance(release, dict):
+        return release
+    return None

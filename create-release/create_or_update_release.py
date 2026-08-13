@@ -22,20 +22,6 @@ def fail(message: str) -> NoReturn:
     sys.exit(1)
 
 
-def existing_release(repository: str, tag: str) -> int | None:
-    """The id of the tag's release, or None when it cannot be found.
-
-    Any failed lookup counts as absence, so the create that follows reports
-    the real error.
-    """
-    status, release = github_api.request(
-        "GET", f"/repos/{repository}/releases/tags/{tag}"
-    )
-    if status == HTTPStatus.OK and isinstance(release, dict):
-        return int(release["id"])
-    return None
-
-
 def reconcile(
     repository: str, release: int, tag: str, prerelease: str, latest: str
 ) -> None:
@@ -79,10 +65,12 @@ def main() -> None:
     notes_start = os.environ["NOTES_START"]
     prerelease = os.environ["PRERELEASE"]
 
-    release = existing_release(repository, tag)
+    # Any failed lookup counts as absence, so the create that follows
+    # reports the real error.
+    release = github_api.release_for(repository, tag)
     if release is not None:
         print(f"Release {tag} already exists; correcting its flags")
-        reconcile(repository, release, tag, prerelease, latest)
+        reconcile(repository, int(release["id"]), tag, prerelease, latest)
         return
 
     # "Latest" is three-state on the API: omitting make_latest is not the same
@@ -111,10 +99,10 @@ def main() -> None:
 
     # Another job pushing the same tag may have won the race; its release is
     # the one this run wanted.
-    release = existing_release(repository, tag)
+    release = github_api.release_for(repository, tag)
     if release is not None:
         print(f"Release {tag} appeared concurrently; correcting its flags")
-        reconcile(repository, release, tag, prerelease, latest)
+        reconcile(repository, int(release["id"]), tag, prerelease, latest)
         return
 
     fail(f"Could not create release {tag}: {github_api.error_message(created)}")

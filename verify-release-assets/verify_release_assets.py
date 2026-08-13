@@ -65,7 +65,10 @@ def main() -> None:
     expected = [line.strip() for line in os.environ["EXPECT"].splitlines()]
     expected = [entry for entry in expected if entry]
     if not expected:
-        fail("EXPECT names no assets; nothing to verify is a configuration error")
+        fail(
+            "EXPECT names no assets: the caller is misconfigured, "
+            "or every producing job failed"
+        )
 
     attached = attached_names(repository, release_id(repository, tag))
     missing = [

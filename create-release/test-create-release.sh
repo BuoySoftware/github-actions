@@ -481,21 +481,24 @@ assert_reports_edit_failure() {
 assert_reports_edit_failure "fails when the flags cannot be corrected" "v38.3-rc.1"
 
 # ---------------------------------------------------------------------------
-# The action this one is being carved out of keeps creating releases until every
-# caller reaches creation through this one.
+# Every caller reaches release creation through this action; the sibling only
+# attaches, and fails loudly when the release is missing.
 # ---------------------------------------------------------------------------
 
 echo
-echo "generate-structure-sql is untouched"
+echo "generate-structure-sql is attach-only"
 SIBLING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/generate-structure-sql"
 if ! grep -q "name: Upload to GitHub Release" "$SIBLING_DIR/action.yml" 2>/dev/null; then
-  fail "generate-structure-sql still creates releases" \
-    "its Upload to GitHub Release step is gone; nothing is cutting releases yet"
-elif ! grep -q "def created_release" "$SIBLING_DIR/attach_structure_sql.py" 2>/dev/null; then
-  fail "generate-structure-sql still creates releases" \
-    "it no longer creates a missing release"
+  fail "generate-structure-sql only attaches" \
+    "its Upload to GitHub Release step is gone; nothing attaches the asset"
+elif grep -q "def created_release" "$SIBLING_DIR/attach_structure_sql.py" 2>/dev/null; then
+  fail "generate-structure-sql only attaches" \
+    "it still carries its own release-creation path"
+elif ! grep -q "No release exists for" "$SIBLING_DIR/attach_structure_sql.py" 2>/dev/null; then
+  fail "generate-structure-sql only attaches" \
+    "a missing release is not reported as a hard failure"
 else
-  printf '  ok   %s\n' "generate-structure-sql still creates releases"
+  printf '  ok   %s\n' "generate-structure-sql only attaches"
 fi
 
 if [ "$failures" -gt 0 ]; then
