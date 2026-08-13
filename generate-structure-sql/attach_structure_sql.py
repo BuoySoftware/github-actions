@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Attach the generated structure.sql to the pushed tag's GitHub release.
+"""Attach the generated structure.sql to a tag's GitHub release.
 
-Reads the tag from GITHUB_REF_NAME and the file from STRUCTURE_SQL_PATH. The
-release must already exist and is attached to without being modified. The
-upload replaces a same-named asset from an earlier run.
+Reads the tag from RELEASE_TAG, falling back to GITHUB_REF_NAME, and the file
+from STRUCTURE_SQL_PATH. A dispatched run builds an arbitrary tag while
+GITHUB_REF_NAME names the branch it was launched from, so the caller passes the
+tag explicitly. The release must already exist and is attached to without being
+modified. The upload replaces a same-named asset from an earlier run.
 """
 
 import os
@@ -44,7 +46,7 @@ def attach(repository: str, release: dict, path: Path) -> None:
 
 
 def main() -> None:
-    tag = os.environ["GITHUB_REF_NAME"]
+    tag = os.environ.get("RELEASE_TAG") or os.environ["GITHUB_REF_NAME"]
     repository = os.environ["GITHUB_REPOSITORY"]
     path = Path(os.environ["STRUCTURE_SQL_PATH"])
 

@@ -49,6 +49,7 @@ extract_step() {
 # code for `status_of` and its own output for `output_of`.
 run_step() {
   local tag="$1" release_exists="$2" fixture="$3" attached_assets="${4:-}"
+  local release_tag="${5:-}"
   local step
   step=$(extract_step "Upload to GitHub Release")
   rm -rf "$fixture"
@@ -87,6 +88,7 @@ run_step() {
       GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
       GITHUB_ACTION_PATH="$SCRIPT_DIR" \
       GITHUB_REPOSITORY="owner/repo" \
+      RELEASE_TAG="$release_tag" \
       STRUCTURE_SQL_PATH="db/structure.sql" \
       bash --noprofile --norc -e -o pipefail -c "$step" \
       > "$fixture/output" 2>&1
@@ -194,6 +196,46 @@ assert_fails_without_release() {
   printf '  ok   %s\n' "$description"
 }
 
+# RELEASE_TAG takes precedence over GITHUB_REF_NAME, so the release the step
+# looks up is the one named explicitly rather than whatever ref the run is on.
+assert_attaches_to_release_tag() {
+  local description="$1" ref_name="$2" release_tag="$3"
+  local log
+  log=$(run_step "$ref_name" true "$FIXTURES/upload" "" "$release_tag")
+  local output
+  output=$(output_of "$FIXTURES/upload")
+
+  if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
+    printf '  FAIL %s (step exited %s)\n' "$description" "$(status_of "$FIXTURES/upload")"
+    printf '       output: %s\n' "$(output_of "$FIXTURES/upload" | tr '\n' '|')"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if ! grep -q "^GET /repos/owner/repo/releases/tags/$release_tag" <<< "$log"; then
+    printf '  FAIL %s (looked up a release other than %s)\n' "$description" "$release_tag"
+    printf '       requests: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if ! grep -q "^POST /uploads/releases/.*name=structure.sql" <<< "$log"; then
+    printf '  FAIL %s (did not upload the asset)\n' "$description"
+    printf '       requests: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if ! grep -q "attached to release $release_tag" <<< "$output"; then
+    printf '  FAIL %s (did not report the named tag)\n' "$description"
+    printf '       output: %s\n' "${output//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
 echo "Upload to GitHub Release"
 
 # The release already exists, which create-release guarantees on every push.
@@ -206,6 +248,15 @@ echo
 echo "Missing release"
 assert_fails_without_release "fails when the release does not exist" "v38.0-rc.1"
 assert_fails_without_release "fails for a final tag too"             "v38.0"
+
+# A dispatched run checks out an arbitrary tag while GITHUB_REF_NAME names the
+# branch it was launched from, so the tag travels in RELEASE_TAG instead.
+echo
+echo "Explicit release tag"
+assert_attaches_to_release_tag "attaches to the named tag, not the branch" \
+  "main" "v36.1"
+assert_attaches_to_release_tag "the named tag wins over a tag ref" \
+  "v38.0-rc.1" "v36.1"
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%d assertion(s) failed\n' "$failures"
