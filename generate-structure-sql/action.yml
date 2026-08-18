@@ -36,6 +36,10 @@ inputs:
     description: "RAILS_ENV for database commands"
     default: "test"
     required: false
+  release_tag:
+    description: "Tag whose release receives the upload. Defaults to the pushed tag"
+    default: ""
+    required: false
   structure_sql_path:
     description: "Output path for the generated structure.sql file"
     default: "db/structure.sql"
@@ -118,13 +122,14 @@ runs:
         echo "✅ structure.sql generated successfully"
       shell: bash
 
-    # Gated on the event, not the ref: a workflow_dispatch can be launched
-    # against a tag, which makes github.ref a refs/tags/ ref while the run is
-    # not a tag push -- and must not touch the tag's release.
+    # Attaching never creates a release, so a run without a tag to attach to is
+    # the only case that must be refused: a dispatch names its tag explicitly,
+    # a tag push carries one in github.ref, and a branch push has neither.
     - name: Upload to GitHub Release
-      if: ${{ inputs.upload_to_release == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+      if: ${{ inputs.upload_to_release == 'true' && (inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')) }}
       env:
         GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
         STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
       run: python3 "$GITHUB_ACTION_PATH/attach_structure_sql.py"
       shell: bash
