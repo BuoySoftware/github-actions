@@ -107,6 +107,7 @@ runs:
       id: check-image-exists
       shell: bash
       env:
+        BASE_TAG: ${{ inputs.base_tag }}
         RC_TAG: ${{ inputs.release_candidate_tag && format('tag-{0}', inputs.release_candidate_tag) || '' }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -116,7 +117,7 @@ runs:
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
-        echo "Base tag: ${{ inputs.base_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "Base tag: $BASE_TAG" >> $GITHUB_STEP_SUMMARY
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
