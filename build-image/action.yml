@@ -117,7 +117,7 @@ runs:
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
-        echo "Base tag: $BASE_TAG" >> $GITHUB_STEP_SUMMARY
+        echo "Base tag: $BASE_TAG" >> "$GITHUB_STEP_SUMMARY"
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
@@ -129,8 +129,8 @@ runs:
           echo "Security patch build, proceeding with build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=false" >> $GITHUB_OUTPUT
         elif [[ -n "$TAG_SUFFIX" ]]; then
-          echo "Tag suffix set, proceeding with build step" >> $GITHUB_STEP_SUMMARY
-          echo "image_exists=false" >> $GITHUB_OUTPUT
+          echo "Tag suffix set, proceeding with build step" >> "$GITHUB_STEP_SUMMARY"
+          echo "image_exists=false" >> "$GITHUB_OUTPUT"
         else
           SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
           if [[ "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
@@ -160,7 +160,7 @@ runs:
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
         fi
 
-        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG --build-arg BASE_TAG=$BASE_TAG
+        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG --build-arg BASE_TAG="$BASE_TAG"
         docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
