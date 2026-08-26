@@ -8,6 +8,10 @@ inputs:
   aws_secret_access_key:
     description: AWS ECR secret access key
     required: true
+  base_tag:
+    default: "latest"
+    description: Passed to the docker build as --build-arg BASE_TAG. Only has an effect when the Dockerfile declares ARG BASE_TAG.
+    required: false
   build_args:
     description: Additional docker build args
   ecr_repository:
@@ -22,6 +26,10 @@ inputs:
     required: false
   slack_webhook_url:
     description: Slack webhook URL for notifications
+    required: false
+  tag_suffix:
+    default: ""
+    description: Appended verbatim to the short and long SHA tags (include any leading "-"). Applied after the security_patch date suffix when both are set. When set, the build always runs even if an unsuffixed image exists.
     required: false
 
 outputs:
@@ -50,6 +58,7 @@ runs:
       shell: bash
       env:
         SECURITY_PATCH: ${{ inputs.security_patch }}
+        TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         short="sha-$(git rev-parse --short HEAD)"
         long="sha-$(git rev-parse HEAD)"
@@ -59,6 +68,11 @@ runs:
           date_suffix="security-patch-$(date +%Y%m%d%H%M%S)"
           short="${short}-${date_suffix}"
           long="${long}-${date_suffix}"
+        fi
+
+        if [ -n "$TAG_SUFFIX" ]; then
+          short="${short}${TAG_SUFFIX}"
+          long="${long}${TAG_SUFFIX}"
         fi
 
         echo "short=$short" >> $GITHUB_OUTPUT
@@ -99,8 +113,10 @@ runs:
         REPOSITORY: ${{ inputs.ecr_repository }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
+        TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
+        echo "Base tag: ${{ inputs.base_tag }}" >> $GITHUB_STEP_SUMMARY
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
@@ -110,6 +126,9 @@ runs:
           echo "image_exists=true" >> $GITHUB_OUTPUT
         elif [[ "$SECURITY_PATCH" == "true" ]]; then
           echo "Security patch build, proceeding with build step" >> $GITHUB_STEP_SUMMARY
+          echo "image_exists=false" >> $GITHUB_OUTPUT
+        elif [[ -n "$TAG_SUFFIX" ]]; then
+          echo "Tag suffix set, proceeding with build step" >> $GITHUB_STEP_SUMMARY
           echo "image_exists=false" >> $GITHUB_OUTPUT
         else
           SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
@@ -126,6 +145,7 @@ runs:
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
+        BASE_TAG: ${{ inputs.base_tag }}
         BUILD_ARGS: ${{ inputs.build_args }}
         LONG_SHA_TAG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
@@ -139,7 +159,7 @@ runs:
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
         fi
 
-        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG
+        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG --build-arg BASE_TAG=$BASE_TAG
         docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
