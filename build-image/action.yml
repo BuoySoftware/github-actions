@@ -8,9 +8,13 @@ inputs:
   aws_secret_access_key:
     description: AWS ECR secret access key
     required: true
-  base_tag:
-    default: "latest"
-    description: Passed to the docker build as --build-arg BASE_TAG. Only has an effect when the Dockerfile declares ARG BASE_TAG.
+  base_image:
+    default: ""
+    description: Full image reference passed to the docker build as --build-arg BASE_IMAGE. Only has an effect when the Dockerfile declares ARG BASE_IMAGE before its first FROM. Requires tag_suffix, so the resulting image cannot collide with a default-base build of the same commit.
+    required: false
+  builder_image:
+    default: ""
+    description: Full image reference passed to the docker build as --build-arg BUILDER_IMAGE, for Dockerfiles whose builder stage uses a separate base. Same requirements as base_image.
     required: false
   build_args:
     description: Additional docker build args
@@ -42,6 +46,9 @@ outputs:
   registry:
     description: "ECR registry for the image"
     value: ${{ steps.login-ecr.outputs.registry }}
+  sha:
+    description: "Raw commit SHA, without any tag suffix"
+    value: ${{ steps.current-git-details.outputs.sha }}
   short_sha_tag:
     description: "Short SHA tag assigned to the image"
     value: ${{ steps.current-git-details.outputs.short }}
@@ -57,11 +64,19 @@ runs:
       id: current-git-details
       shell: bash
       env:
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
+        if [ -z "$TAG_SUFFIX" ] && { [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; }; then
+          echo "::error::base_image/builder_image require tag_suffix. Without it this build would reuse the tag of a default-base build of the same commit, and skip-if-exists may skip the build entirely." >&2
+          exit 1
+        fi
+
+        sha="$(git rev-parse HEAD)"
         short="sha-$(git rev-parse --short HEAD)"
-        long="sha-$(git rev-parse HEAD)"
+        long="sha-${sha}"
         tag=""
 
         if [ "$SECURITY_PATCH" == "true" ]; then
@@ -75,8 +90,9 @@ runs:
           long="${long}${TAG_SUFFIX}"
         fi
 
-        echo "short=$short" >> $GITHUB_OUTPUT
-        echo "long=$long" >> $GITHUB_OUTPUT
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+        echo "short=$short" >> "$GITHUB_OUTPUT"
+        echo "long=$long" >> "$GITHUB_OUTPUT"
 
         if git show-ref --verify refs/tags/${{ github.event.inputs.ref}} > /dev/null 2>&1; then
           tag="tag-${{ github.event.inputs.ref }}"
@@ -84,13 +100,18 @@ runs:
           tag="tag-${{ github.ref_name }}"
         fi
 
-        echo "tag=$tag" >> $GITHUB_OUTPUT
+        # An overridden-base build must not claim the canonical release tag.
+        if [ -n "$tag" ] && [ -n "$TAG_SUFFIX" ]; then
+          tag="${tag}${TAG_SUFFIX}"
+        fi
+
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
         # Add tags to github summary
-        echo "## Tags" >> $GITHUB_STEP_SUMMARY
-        echo "Short SHA: $short" >> $GITHUB_STEP_SUMMARY
-        echo "Long SHA: $long" >> $GITHUB_STEP_SUMMARY
-        echo "Ref Tag: $tag" >> $GITHUB_STEP_SUMMARY
+        echo "## Tags" >> "$GITHUB_STEP_SUMMARY"
+        echo "Short SHA: $short" >> "$GITHUB_STEP_SUMMARY"
+        echo "Long SHA: $long" >> "$GITHUB_STEP_SUMMARY"
+        echo "Ref Tag: $tag" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Amazon ECR Credentials
       uses: aws-actions/configure-aws-credentials@v6
@@ -107,7 +128,8 @@ runs:
       id: check-image-exists
       shell: bash
       env:
-        BASE_TAG: ${{ inputs.base_tag }}
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
         RC_TAG: ${{ inputs.release_candidate_tag && format('tag-{0}', inputs.release_candidate_tag) || '' }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -117,7 +139,8 @@ runs:
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
-        echo "Base tag: $BASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+        echo "Base image: ${BASE_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
+        echo "Builder image: ${BUILDER_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
@@ -146,7 +169,8 @@ runs:
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
-        BASE_TAG: ${{ inputs.base_tag }}
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
         BUILD_ARGS: ${{ inputs.build_args }}
         LONG_SHA_TAG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
@@ -154,13 +178,24 @@ runs:
         REPOSITORY: ${{ inputs.ecr_repository }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
+        # The raw commit, not a tag: this is baked into the image as its own
+        # identity, and tag suffixes would break exact-match lookups on it.
+        SHA: ${{ steps.current-git-details.outputs.sha }}
       run: |
         TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
-        if [ -n "${{ steps.current-git-details.outputs.tag }}" ]; then
+        if [ -n "$REF_TAG" ]; then
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
         fi
 
-        docker build . $TAGS $BUILD_ARGS --build-arg CURR_GIT_SHA=$LONG_SHA_TAG --build-arg BASE_TAG="$BASE_TAG"
+        BASE_ARGS=""
+        if [ -n "$BASE_IMAGE" ]; then
+          BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_IMAGE"
+        fi
+        if [ -n "$BUILDER_IMAGE" ]; then
+          BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_IMAGE"
+        fi
+
+        docker build . $TAGS $BUILD_ARGS $BASE_ARGS --build-arg CURR_GIT_SHA="$SHA"
         docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
