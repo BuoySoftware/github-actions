@@ -47,7 +47,7 @@ outputs:
     description: "ECR registry for the image"
     value: ${{ steps.login-ecr.outputs.registry }}
   sha:
-    description: "Raw commit SHA, without any tag suffix"
+    description: "Commit tag without build suffixes (sha-<40hex>)"
     value: ${{ steps.current-git-details.outputs.sha }}
   short_sha_tag:
     description: "Short SHA tag assigned to the image"
@@ -74,9 +74,12 @@ runs:
           exit 1
         fi
 
-        sha="$(git rev-parse HEAD)"
+        # Keeps the sha- prefix: BUOY_SLUG_COMMIT is consumed by the
+        # REQ-084 labeling lookup, which strips exactly that prefix. Only the
+        # build suffixes are excluded, so the commit stays resolvable.
+        sha="sha-$(git rev-parse HEAD)"
         short="sha-$(git rev-parse --short HEAD)"
-        long="sha-${sha}"
+        long="${sha}"
         tag=""
 
         if [ "$SECURITY_PATCH" == "true" ]; then

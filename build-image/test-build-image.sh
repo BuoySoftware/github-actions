@@ -24,9 +24,9 @@ compose_tags() {
   fi
 
   local sha short long tag
-  sha="$SHA_FULL"
+  sha="sha-$SHA_FULL"
   short="sha-$SHA_SHORT"
-  long="sha-${sha}"
+  long="${sha}"
   tag=""
 
   if [ "$SECURITY_PATCH" == "true" ]; then
@@ -108,14 +108,24 @@ else
 fi
 
 ########################################
-# CURR_GIT_SHA stays a raw commit
+# CURR_GIT_SHA keeps the sha- prefix and drops build suffixes.
+# BUOY_SLUG_COMMIT feeds the REQ-084 labeling lookup, which strips "sha-"
+# and matches the remainder against a 40-hex commit column. A suffix here
+# silently falls back to the most recent software version.
 ########################################
 
 out=$(compose_tags true "-base-pr40" "" "" "")
-if grep -qx "sha=$SHA_FULL" <<<"$out"; then
-  ok "raw sha unaffected by either suffix"
+if grep -qx "sha=sha-$SHA_FULL" <<<"$out"; then
+  ok "commit value keeps sha- prefix, unaffected by either suffix"
 else
-  fail "raw sha" "$out"
+  fail "commit value" "$out"
+fi
+
+sha_line=$(grep '^sha=' <<<"$out"); stripped="${sha_line#sha=}"; stripped="${stripped#sha-}"
+if [[ "$stripped" =~ ^[0-9a-f]{40}$ ]]; then
+  ok "REQ-084: value resolves to a bare 40-hex commit after prefix strip"
+else
+  fail "REQ-084 resolvability" "got '$stripped'"
 fi
 
 ########################################
