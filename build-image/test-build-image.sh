@@ -17,10 +17,18 @@ SHA_SHORT=0123456
 # with the guard message.
 compose_tags() {
   local SECURITY_PATCH=$1 TAG_SUFFIX=$2 BASE_IMAGE=$3 BUILDER_IMAGE=$4 REF=$5
+  local RELEASE_CANDIDATE_TAG=${6:-} HAS_ARG=${7:-yes}
 
-  if [ -z "$TAG_SUFFIX" ] && { [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; }; then
-    echo "GUARD_TRIPPED"
-    return 1
+  if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
+    if [ -z "$TAG_SUFFIX" ]; then
+      echo "GUARD_TRIPPED_NO_SUFFIX"; return 1
+    fi
+    if [ -n "$RELEASE_CANDIDATE_TAG" ]; then
+      echo "GUARD_TRIPPED_RC_CONFLICT"; return 1
+    fi
+    if [ "$HAS_ARG" != "yes" ]; then
+      echo "GUARD_TRIPPED_NO_ARG"; return 1
+    fi
   fi
 
   local sha short long tag
@@ -93,7 +101,7 @@ for desc in "base_image" "builder_image"; do
   else
     out=$(compose_tags false "" "" "ecr/base-builder:pr-40" ""); rc=$?
   fi
-  if [ $rc -ne 0 ] && grep -q GUARD_TRIPPED <<<"$out"; then
+  if [ $rc -ne 0 ] && grep -q GUARD_TRIPPED_NO_SUFFIX <<<"$out"; then
     ok "$desc without tag_suffix fails loudly"
   else
     fail "$desc guard" "rc=$rc $out"
@@ -105,6 +113,24 @@ if [ $rc -eq 0 ]; then
   ok "base override with tag_suffix is accepted"
 else
   fail "base override accepted" "rc=$rc"
+fi
+
+# A release-candidate finalization retags an existing image and never builds,
+# so a base override there would label a default-base image as a candidate.
+out=$(compose_tags false "-base-pr40" "ecr/base:pr-40" "" "v29.0" "v29.0"); rc=$?
+if [ $rc -ne 0 ] && grep -q GUARD_TRIPPED_RC_CONFLICT <<<"$out"; then
+  ok "base override combined with release_candidate_tag fails loudly"
+else
+  fail "RC conflict guard" "rc=$rc $out"
+fi
+
+# An unconsumed --build-arg is only a BuildKit warning, so a Dockerfile with no
+# ARG BASE_IMAGE would silently produce a candidate tag on the old base.
+out=$(compose_tags false "-base-pr40" "ecr/base:pr-40" "" "" "" "no"); rc=$?
+if [ $rc -ne 0 ] && grep -q GUARD_TRIPPED_NO_ARG <<<"$out"; then
+  ok "base override without ARG BASE_IMAGE in the Dockerfile fails loudly"
+else
+  fail "ARG presence guard" "rc=$rc $out"
 fi
 
 ########################################

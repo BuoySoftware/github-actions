@@ -66,12 +66,26 @@ runs:
       env:
         BASE_IMAGE: ${{ inputs.base_image }}
         BUILDER_IMAGE: ${{ inputs.builder_image }}
+        RELEASE_CANDIDATE_TAG: ${{ inputs.release_candidate_tag }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
-        if [ -z "$TAG_SUFFIX" ] && { [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; }; then
-          echo "::error::base_image/builder_image require tag_suffix. Without it this build would reuse the tag of a default-base build of the same commit, and skip-if-exists may skip the build entirely." >&2
-          exit 1
+        if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
+          if [ -z "$TAG_SUFFIX" ]; then
+            echo "::error::base_image/builder_image require tag_suffix. Without it this build would reuse the tag of a default-base build of the same commit, and skip-if-exists may skip the build entirely." >&2
+            exit 1
+          fi
+          # A release-candidate finalization retags an existing image; it never
+          # builds. Combining the two would tag that image as if it carried the
+          # overridden base.
+          if [ -n "$RELEASE_CANDIDATE_TAG" ]; then
+            echo "::error::base_image/builder_image cannot be combined with release_candidate_tag: that path retags an existing image instead of building one." >&2
+            exit 1
+          fi
+          if ! grep -qE '^[[:space:]]*ARG[[:space:]]+BASE_IMAGE' Dockerfile; then
+            echo "::error::base_image was passed but Dockerfile declares no ARG BASE_IMAGE before its first FROM, so the override would be silently ignored." >&2
+            exit 1
+          fi
         fi
 
         # Keeps the sha- prefix: BUOY_SLUG_COMMIT is consumed by the
