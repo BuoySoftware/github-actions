@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Attach the generated structure.sql to a tag's GitHub release.
+"""Attach the generated SBOM to a tag's GitHub release.
 
 Reads the tag from RELEASE_TAG, falling back to GITHUB_REF_NAME, and the file
-from STRUCTURE_SQL_PATH.
+from SBOM_PATH.
 """
 
 import os
@@ -15,7 +15,7 @@ import release_assets
 
 
 def main() -> None:
-    release_assets.attach_all(os.environ["STRUCTURE_SQL_PATH"])
+    release_assets.attach_all(os.environ["SBOM_PATH"])
 
 
 if __name__ == "__main__":

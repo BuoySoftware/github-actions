@@ -1,0 +1,92 @@
+name: Generate SBOM
+description: |
+  Generates an SPDX SBOM with Syft and optionally uploads it to a GitHub
+  Release or as a workflow artifact.
+
+  Mirrors generate-structure-sql: the generator and the upload live together,
+  so a run that names its tag explicitly attaches to that tag's release. The
+  underlying sbom-action uploads to a release only on a push to a tags ref,
+  which left the workflow_dispatch recovery path with a workflow artifact and
+  no release asset while still reporting success.
+
+  Prerequisites (caller must provide):
+  - actions/checkout
+  - python3 on PATH for the release step, which talks to the REST API
+    directly. The gh CLI is deliberately not used: GitHub-hosted runners
+    preinstall it and self-hosted images do not necessarily carry it.
+
+inputs:
+  artifact_name_suffix:
+    description: "Suffix for the workflow artifact name (e.g., the ref or SHA)"
+    default: ""
+    required: false
+  asset_name:
+    description: "File name the SBOM is attached to the release under"
+    default: "sbom.spdx.json"
+    required: false
+  path:
+    description: "Directory scanned for dependencies"
+    default: "."
+    required: false
+  release_tag:
+    description: "Tag whose release receives the upload. Defaults to the pushed tag"
+    default: ""
+    required: false
+  upload_as_artifact:
+    description: "Upload the SBOM as a workflow artifact"
+    default: "false"
+    required: false
+  upload_to_release:
+    description: "Upload the SBOM to the GitHub Release (requires an existing release)"
+    default: "false"
+    required: false
+
+runs:
+  using: "composite"
+
+  steps:
+    # upload-release-assets is off because this action owns the upload: the
+    # built-in one fires only on a tag push, which is the gap being closed.
+    - name: Generate SBOM
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        path: ${{ inputs.path }}
+        format: spdx-json
+        output-file: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+        upload-artifact: "false"
+        upload-release-assets: "false"
+
+    - name: Verify SBOM
+      env:
+        SBOM_PATH: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+      run: |
+        if [ ! -s "$SBOM_PATH" ]; then
+          echo "::error::SBOM is empty or missing"
+          exit 1
+        fi
+        echo "::group::SBOM stats"
+        wc -c "$SBOM_PATH"
+        python3 -c "import json,os,sys; d=json.load(open(os.environ['SBOM_PATH'])); n=len(d.get('packages',[])); print(f'packages: {n}'); sys.exit(1) if n == 0 else None" \
+          || { echo "::error::SBOM lists no packages"; exit 1; }
+        echo "::endgroup::"
+        echo "✅ SBOM generated successfully"
+      shell: bash
+
+    # Attaching never creates a release, so a run without a tag to attach to is
+    # the only case that must be refused: a dispatch names its tag explicitly,
+    # a tag push carries one in github.ref, and a branch push has neither.
+    - name: Upload to GitHub Release
+      if: ${{ inputs.upload_to_release == 'true' && (inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')) }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
+        SBOM_PATH: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+      run: python3 "$GITHUB_ACTION_PATH/attach_sbom.py"
+      shell: bash
+
+    - name: Upload as workflow artifact
+      if: ${{ inputs.upload_as_artifact == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-${{ inputs.artifact_name_suffix || github.sha }}
+        path: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
