@@ -4,7 +4,7 @@
 The release-asset routes live in lib/fake_github.py; see ReleaseAssetHandler
 for the fixture files that configure the responses.
 
-Usage: python3 generate-structure-sql/fake_github.py <fixture-dir>
+Usage: python3 generate-sbom/fake_github.py <fixture-dir>
 """
 
 import sys

@@ -52,13 +52,13 @@ runs:
       with:
         path: ${{ inputs.path }}
         format: spdx-json
-        output-file: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+        output-file: ${{ runner.temp }}/${{ inputs.asset_name }}
         upload-artifact: "false"
         upload-release-assets: "false"
 
     - name: Verify SBOM
       env:
-        SBOM_PATH: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+        SBOM_PATH: ${{ runner.temp }}/${{ inputs.asset_name }}
       run: |
         if [ ! -s "$SBOM_PATH" ]; then
           echo "::error::SBOM is empty or missing"
@@ -72,15 +72,12 @@ runs:
         echo "✅ SBOM generated successfully"
       shell: bash
 
-    # Attaching never creates a release, so a run without a tag to attach to is
-    # the only case that must be refused: a dispatch names its tag explicitly,
-    # a tag push carries one in github.ref, and a branch push has neither.
     - name: Upload to GitHub Release
-      if: ${{ inputs.upload_to_release == 'true' && (inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')) }}
+      if: ${{ inputs.upload_to_release == 'true' }}
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ inputs.release_tag }}
-        SBOM_PATH: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+        SBOM_PATH: ${{ runner.temp }}/${{ inputs.asset_name }}
       run: python3 "$GITHUB_ACTION_PATH/attach_sbom.py"
       shell: bash
 
@@ -89,4 +86,4 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: sbom-${{ inputs.artifact_name_suffix || github.sha }}
-        path: ${{ runner.temp }}/sbom/${{ inputs.asset_name }}
+        path: ${{ runner.temp }}/${{ inputs.asset_name }}
