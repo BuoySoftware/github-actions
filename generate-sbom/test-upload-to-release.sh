@@ -224,6 +224,65 @@ assert_refuses_a_missing_sbom() {
   printf '  ok   %s\n' "$description"
 }
 
+# A tag condition in the `if:` makes a tagless dispatched run skip green, which
+# no request log can observe.
+assert_upload_gate_is_unconditional() {
+  local description="$1" condition
+  condition=$(awk '/name: Upload to GitHub Release/,/shell: bash/' "$ACTION" \
+    | sed -n 's/^ *if: //p')
+
+  if [ "$condition" != "\${{ inputs.upload_to_release == 'true' }}" ]; then
+    fail "$description" \
+      "the upload gate is \`$condition\`, not the bare upload_to_release check"
+    return
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
+# An SBOM with an empty package list is still a non-empty file.
+assert_verifies_packages() {
+  local description="$1" sbom_json="$2" expect_ok="$3" expect_error="${4:-}"
+  local step fixture status output
+  step=$(extract_step "Verify SBOM")
+  fixture="$FIXTURES/verify"
+  rm -rf "${fixture:?}"
+  mkdir -p "$fixture"
+
+  if [ -z "$step" ]; then
+    fail "$description" "no Verify SBOM step body to extract"
+    return
+  fi
+
+  if [ -n "$sbom_json" ]; then
+    printf '%s\n' "$sbom_json" > "$fixture/$ASSET"
+  fi
+
+  output=$(cd "$fixture" && env SBOM_PATH="$ASSET" \
+    bash --noprofile --norc -e -o pipefail -c "$step" 2>&1)
+  status=$?
+
+  if [ "$expect_ok" = true ]; then
+    if [ "$status" -ne 0 ]; then
+      fail "$description" "step exited $status: ${output//$'\n'/ | }"
+      return
+    fi
+  else
+    if [ "$status" -eq 0 ]; then
+      fail "$description" "step accepted an SBOM it must refuse"
+      return
+    fi
+
+    if ! grep -q "^::error::$expect_error" <<< "$output"; then
+      fail "$description" \
+        "the refusal is not reported inside the ::error:: annotation: ${output//$'\n'/ | }"
+      return
+    fi
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
 # sbom-action writes output-file with a bare writeFileSync, so a path under a
 # subdirectory of runner.temp fails with ENOENT unless something creates it.
 # The generator is a `uses:` step with no body to run, so this is asserted by
@@ -275,11 +334,22 @@ assert_attaches "replaces its own asset from an earlier run" \
   "refs/tags/v37.0" "" "v37.0" "$ASSET"
 
 echo
+echo "Verify SBOM"
+assert_verifies_packages "accepts an SBOM that lists a package" \
+  '{"spdxVersion":"SPDX-2.3","packages":[{"name":"example"}]}' true
+assert_verifies_packages "refuses an SBOM with no packages" \
+  '{"spdxVersion":"SPDX-2.3","packages":[]}' false "SBOM lists no packages"
+assert_verifies_packages "refuses an absent SBOM" \
+  "" false "SBOM is empty or missing"
+
+echo
 echo "Refusals"
 assert_refuses_without_a_tag "fails on a branch push with no named tag" \
   "refs/heads/main"
 assert_refuses_without_a_tag "fails when there is no ref at all" ""
 assert_refuses_a_missing_sbom "fails when the SBOM was never written"
+assert_upload_gate_is_unconditional \
+  "the upload gate does not skip a dispatched run with no tag ref"
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%d assertion(s) failed\n' "$failures"
