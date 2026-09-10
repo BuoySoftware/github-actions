@@ -14,7 +14,7 @@ inputs:
     required: false
   builder_image:
     default: ""
-    description: Full image reference passed to the docker build as --build-arg BUILDER_IMAGE, for Dockerfiles whose builder stage uses a separate base. Same requirements as base_image.
+    description: Full image reference passed to the docker build as --build-arg BUILDER_IMAGE, for Dockerfiles whose builder stage uses a separate base. Only has an effect when the Dockerfile declares ARG BUILDER_IMAGE before its first FROM, which is verified independently of base_image. Same requirements as base_image otherwise.
     required: false
   build_args:
     description: Additional docker build args
@@ -33,7 +33,7 @@ inputs:
     required: false
   tag_suffix:
     default: ""
-    description: Appended verbatim to the short and long SHA tags (include any leading "-"). Applied after the security_patch date suffix when both are set. When set, the build always runs even if an unsuffixed image exists.
+    description: Appended verbatim to the short and long SHA tags, and to the release ref tag when one applies (include any leading "-"). Applied after the security_patch date suffix when both are set. When set, the build always runs even if an unsuffixed image exists.
     required: false
 
 outputs:
@@ -69,66 +69,42 @@ runs:
         RELEASE_CANDIDATE_TAG: ${{ inputs.release_candidate_tag }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         TAG_SUFFIX: ${{ inputs.tag_suffix }}
+        DISPATCH_REF: ${{ github.event.inputs.ref }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_REF: ${{ github.ref }}
       run: |
-        if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
-          if [ -z "$TAG_SUFFIX" ]; then
-            echo "::error::base_image/builder_image require tag_suffix. Without it this build would reuse the tag of a default-base build of the same commit, and skip-if-exists may skip the build entirely." >&2
-            exit 1
+        ref_tag=""
+        if [ -n "$DISPATCH_REF" ] &&
+          git show-ref --verify "refs/tags/$DISPATCH_REF" > /dev/null 2>&1; then
+          ref_tag="tag-$DISPATCH_REF"
+        elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          ref_tag="tag-$GITHUB_REF_NAME"
+        fi
+
+        GIT_SHA="$(git rev-parse HEAD)" \
+        GIT_SHORT_SHA="$(git rev-parse --short HEAD)" \
+        REF_TAG="$ref_tag" \
+          "${{ github.action_path }}/compose-tags.sh" >> "$GITHUB_OUTPUT"
+
+    - name: Summarize tags
+      shell: bash
+      env:
+        SHORT: ${{ steps.current-git-details.outputs.short }}
+        LONG: ${{ steps.current-git-details.outputs.long }}
+        REF_TAG: ${{ steps.current-git-details.outputs.tag }}
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
+      run: |
+        {
+          echo "## Tags"
+          echo "Short SHA: $SHORT"
+          echo "Long SHA: $LONG"
+          echo "Ref Tag: $REF_TAG"
+          if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
+            echo "Base image: ${BASE_IMAGE:-(default)}"
+            echo "Builder image: ${BUILDER_IMAGE:-(default)}"
           fi
-          # A release-candidate finalization retags an existing image; it never
-          # builds. Combining the two would tag that image as if it carried the
-          # overridden base.
-          if [ -n "$RELEASE_CANDIDATE_TAG" ]; then
-            echo "::error::base_image/builder_image cannot be combined with release_candidate_tag: that path retags an existing image instead of building one." >&2
-            exit 1
-          fi
-          if ! grep -qE '^[[:space:]]*ARG[[:space:]]+BASE_IMAGE' Dockerfile; then
-            echo "::error::base_image was passed but Dockerfile declares no ARG BASE_IMAGE before its first FROM, so the override would be silently ignored." >&2
-            exit 1
-          fi
-        fi
-
-        # Keeps the sha- prefix: BUOY_SLUG_COMMIT is consumed by the
-        # REQ-084 labeling lookup, which strips exactly that prefix. Only the
-        # build suffixes are excluded, so the commit stays resolvable.
-        sha="sha-$(git rev-parse HEAD)"
-        short="sha-$(git rev-parse --short HEAD)"
-        long="${sha}"
-        tag=""
-
-        if [ "$SECURITY_PATCH" == "true" ]; then
-          date_suffix="security-patch-$(date +%Y%m%d%H%M%S)"
-          short="${short}-${date_suffix}"
-          long="${long}-${date_suffix}"
-        fi
-
-        if [ -n "$TAG_SUFFIX" ]; then
-          short="${short}${TAG_SUFFIX}"
-          long="${long}${TAG_SUFFIX}"
-        fi
-
-        echo "sha=$sha" >> "$GITHUB_OUTPUT"
-        echo "short=$short" >> "$GITHUB_OUTPUT"
-        echo "long=$long" >> "$GITHUB_OUTPUT"
-
-        if git show-ref --verify refs/tags/${{ github.event.inputs.ref}} > /dev/null 2>&1; then
-          tag="tag-${{ github.event.inputs.ref }}"
-        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          tag="tag-${{ github.ref_name }}"
-        fi
-
-        # An overridden-base build must not claim the canonical release tag.
-        if [ -n "$tag" ] && [ -n "$TAG_SUFFIX" ]; then
-          tag="${tag}${TAG_SUFFIX}"
-        fi
-
-        echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-        # Add tags to github summary
-        echo "## Tags" >> "$GITHUB_STEP_SUMMARY"
-        echo "Short SHA: $short" >> "$GITHUB_STEP_SUMMARY"
-        echo "Long SHA: $long" >> "$GITHUB_STEP_SUMMARY"
-        echo "Ref Tag: $tag" >> "$GITHUB_STEP_SUMMARY"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Amazon ECR Credentials
       uses: aws-actions/configure-aws-credentials@v6
