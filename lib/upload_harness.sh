@@ -17,7 +17,7 @@
 # Extract a step's `run:` body. The awk range restarts on each `name:` line, so
 # it lands on the named step regardless of step order. Steps take their values
 # from `env:`, so there are no `${{ }}` expressions left in the body to
-# substitute -- the harness sets the same variables the runner would.
+# substitute -- `extract_step_env` resolves the step's own `env:` block instead.
 #
 # A step whose command is short enough to sit on the `run:` line itself is
 # extracted from there.
@@ -34,6 +34,29 @@ extract_step() {
   fi
 }
 
+# Extract the step's `env:` block as `NAME=value` lines, with the `${{ }}`
+# expressions the runner would evaluate replaced by the harness's own values.
+#
+# The wiring under test lives in that block, so it is read from action.yml
+# rather than injected: deleting `RELEASE_TAG: ${{ inputs.release_tag }}` leaves
+# the variable unset for the shipped `run:` body, exactly as a dispatched run
+# would see it.
+#
+# Expressions this does not know are left unresolved, so a step that starts
+# depending on a new one fails loudly instead of running with an empty value.
+extract_step_env() {
+  local step_name="$1" asset_path="$2" github_ref="$3" release_tag="$4"
+
+  awk "/name: $step_name/,/shell: bash/" "$ACTION" \
+    | sed -n '/^ *env:/,/^ *run:/p' \
+    | sed -n 's/^ *\([A-Z_][A-Z0-9_]*\): \(.*\)$/\1=\2/p' \
+    | sed \
+      -e "s|\${{ inputs.release_tag }}|$release_tag|g" \
+      -e "s|\${{ github.ref }}|$github_ref|g" \
+      -e "s|\${{ github.token }}|stub|g" \
+      -e "s|^\(ASSET_PATH\)=.*|\1=$asset_path|"
+}
+
 # Runs the upload step against a fresh stand-in API serving the given fixture,
 # and echoes the requests it made, one per line. Records the exit code for
 # `status_of` and the step's own output for `output_of`.
@@ -44,6 +67,7 @@ run_step() {
   local github_ref="$1" release_exists="$2" fixture="$3"
   local attached_assets="${4:-}" release_tag="${5:-}" asset_written="${6:-true}"
   local step asset_path
+  local -a step_env
   step=$(extract_step "Upload to GitHub Release")
   rm -rf "${fixture:?}"
   mkdir -p "$fixture"
@@ -58,6 +82,8 @@ run_step() {
   if [ "$asset_written" = true ]; then
     write_asset "$fixture" "$asset_path"
   fi
+  mapfile -t step_env < <(extract_step_env "Upload to GitHub Release" \
+    "$asset_path" "$github_ref" "$release_tag")
   echo "$release_exists" > "$fixture/release_exists"
   echo "$attached_assets" > "$fixture/attached_assets"
   : > "$fixture/requests.log"
@@ -80,13 +106,13 @@ run_step() {
     # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
     # pipefail`. Step output goes to a file so stdout stays free for the
     # request log.
+    # GITHUB_* below are the runner's own context. Everything the step needs
+    # beyond that comes from its `env:` block in action.yml, unmodified.
     env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
-      GITHUB_REF="$github_ref" GITHUB_REF_NAME="${github_ref##*/}" \
-      GH_TOKEN="stub" \
+      GITHUB_REF_NAME="${github_ref##*/}" \
       GITHUB_ACTION_PATH="$ACTION_DIR" \
       GITHUB_REPOSITORY="owner/repo" \
-      RELEASE_TAG="$release_tag" \
-      ASSET_PATH="$asset_path" \
+      "${step_env[@]}" \
       bash --noprofile --norc -e -o pipefail -c "$step" \
       > "$fixture/output" 2>&1
   )
