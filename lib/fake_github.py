@@ -9,11 +9,14 @@ listening, the chosen port is written to `port`.
 
 ReleaseAssetHandler carries the release-asset routes the upload harnesses
 share, so an action that only attaches a generated file needs no routes of
-its own.
+its own. Run as a script, this module serves exactly that handler:
+
+    python3 lib/fake_github.py <fixture-dir>
 """
 
 import json
 import re
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -109,3 +112,7 @@ def serve(handler: type[Handler], fixture: Path) -> None:
     server = HTTPServer(("127.0.0.1", 0), handler)
     (fixture / "port").write_text(str(server.server_port))
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    serve(ReleaseAssetHandler, Path(sys.argv[1]))

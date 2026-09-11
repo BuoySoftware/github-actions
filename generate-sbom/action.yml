@@ -14,6 +14,8 @@ description: |
   - python3 on PATH for the release step, which talks to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
+  - a job token with `permissions: contents: write` when upload_to_release is
+    true: the upload POSTs to the release.
 
 inputs:
   artifact_name_suffix:
@@ -66,8 +68,7 @@ runs:
         fi
         echo "::group::SBOM stats"
         wc -c "$SBOM_PATH"
-        python3 -c "import json,os,sys; d=json.load(open(os.environ['SBOM_PATH'])); n=len(d.get('packages',[])); print(f'packages: {n}'); sys.exit(1) if n == 0 else None" \
-          || { echo "::error::SBOM lists no packages"; exit 1; }
+        python3 "$GITHUB_ACTION_PATH/verify_sbom.py"
         echo "::endgroup::"
         echo "✅ SBOM generated successfully"
       shell: bash
@@ -76,6 +77,7 @@ runs:
       if: ${{ inputs.upload_to_release == 'true' }}
       env:
         GH_TOKEN: ${{ github.token }}
+        GITHUB_REF: ${{ github.ref }}
         RELEASE_TAG: ${{ inputs.release_tag }}
         SBOM_PATH: ${{ runner.temp }}/${{ inputs.asset_name }}
       run: python3 "$GITHUB_ACTION_PATH/attach_sbom.py"
@@ -83,7 +85,7 @@ runs:
 
     - name: Upload as workflow artifact
       if: ${{ inputs.upload_as_artifact == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: sbom-${{ inputs.artifact_name_suffix || github.sha }}
         path: ${{ runner.temp }}/${{ inputs.asset_name }}

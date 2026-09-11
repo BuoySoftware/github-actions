@@ -24,6 +24,42 @@ trap 'rm -rf "$FIXTURES"' EXIT
 ASSET="sbom.spdx.json"
 failures=0
 
+# The SBOM path is declared three times in action.yml: once as the generator's
+# `output-file`, and once per step that reads it back as SBOM_PATH. They must
+# be one expression, or a step reads a file another step never wrote. Echoes
+# that single expression; a disagreement is fatal, because every later
+# assertion resolves the path from here.
+declared_sbom_path() {
+  local declarations unique
+  declarations=$(sed -n -e 's/^ *output-file: //p' -e 's/^ *SBOM_PATH: //p' "$ACTION")
+  unique=$(sort -u <<< "$declarations")
+
+  if [ "$(grep -c . <<< "$declarations")" -lt 3 ]; then
+    echo "action.yml declares the SBOM path fewer than three times" >&2
+    return 1
+  fi
+
+  if [ "$(grep -c . <<< "$unique")" -ne 1 ]; then
+    echo "the SBOM path declarations disagree: ${unique//$'\n'/ | }" >&2
+    return 1
+  fi
+
+  echo "$unique"
+}
+
+# The declared expression with the runner's values substituted in, so the
+# harness reads and writes wherever action.yml currently points.
+resolve_sbom_path() {
+  local temp="$1" resolved
+  resolved="${SBOM_PATH_EXPRESSION//\$\{\{ runner.temp \}\}/$temp}"
+  echo "${resolved//\$\{\{ inputs.asset_name \}\}/$ASSET}"
+}
+
+if ! SBOM_PATH_EXPRESSION=$(declared_sbom_path); then
+  echo "FAIL the SBOM path is not declared consistently in action.yml"
+  exit 1
+fi
+
 # Extract a step's `run:` body. The awk range restarts on each `name:` line, so
 # it lands on the named step regardless of step order. Steps take their values
 # from `env:`, so there are no `${{ }}` expressions left in the body to
@@ -57,6 +93,8 @@ run_step() {
   step=$(extract_step "Upload to GitHub Release")
   rm -rf "${fixture:?}"
   mkdir -p "$fixture/temp"
+  local sbom_path
+  sbom_path=$(resolve_sbom_path "temp")
 
   if [ -z "$step" ]; then
     # No `run:` body to extract -- the step is a `uses:` action, or was renamed.
@@ -66,13 +104,13 @@ run_step() {
 
   if [ "$sbom_written" = true ]; then
     printf '{"spdxVersion":"SPDX-2.3","packages":[{"name":"example"}]}\n' \
-      > "$fixture/temp/$ASSET"
+      > "$fixture/$sbom_path"
   fi
   echo "$release_exists" > "$fixture/release_exists"
   echo "$attached_assets" > "$fixture/attached_assets"
   : > "$fixture/requests.log"
 
-  python3 "$SCRIPT_DIR/fake_github.py" "$fixture" &
+  python3 "$SCRIPT_DIR/../lib/fake_github.py" "$fixture" &
   local server_pid=$!
   local waited=0
   while [ ! -s "$fixture/port" ] && [ "$waited" -lt 100 ]; do
@@ -96,7 +134,7 @@ run_step() {
       GITHUB_ACTION_PATH="$SCRIPT_DIR" \
       GITHUB_REPOSITORY="owner/repo" \
       RELEASE_TAG="$release_tag" \
-      SBOM_PATH="temp/$ASSET" \
+      SBOM_PATH="$sbom_path" \
       bash --noprofile --norc -e -o pipefail -c "$step" \
       > "$fixture/output" 2>&1
   )
@@ -215,7 +253,8 @@ assert_refuses_a_missing_sbom() {
     return
   fi
 
-  if ! grep -q "^::error::No non-empty file matches temp/$ASSET" <<< "$output"; then
+  if ! grep -q "^::error::No non-empty file matches $(resolve_sbom_path temp)" \
+    <<< "$output"; then
     fail "$description" \
       "the missing SBOM is not reported inside the ::error:: annotation: ${output//$'\n'/ | }"
     return
@@ -259,6 +298,7 @@ assert_verifies_packages() {
   fi
 
   output=$(cd "$fixture" && env SBOM_PATH="$ASSET" \
+    GITHUB_ACTION_PATH="$SCRIPT_DIR" \
     bash --noprofile --norc -e -o pipefail -c "$step" 2>&1)
   status=$?
 
@@ -289,13 +329,7 @@ assert_verifies_packages() {
 # resolving the shipped path against a real directory.
 assert_output_file_is_writable() {
   local description="the generated SBOM path needs no directory nobody creates"
-  local output_file temp resolved
-  output_file=$(sed -n 's/^ *output-file: //p' "$ACTION")
-
-  if [ -z "$output_file" ]; then
-    fail "$description" "action.yml declares no output-file"
-    return
-  fi
+  local temp resolved
 
   if grep -qE '^ *(run|shell): .*mkdir' "$ACTION"; then
     printf '  ok   %s (a step creates it)\n' "$description"
@@ -305,11 +339,11 @@ assert_output_file_is_writable() {
   temp="$FIXTURES/runner-temp"
   rm -rf "${temp:?}"
   mkdir -p "$temp"
-  resolved="${output_file//\$\{\{ runner.temp \}\}/$temp}"
-  resolved="${resolved//\$\{\{ inputs.asset_name \}\}/$ASSET}"
+  resolved=$(resolve_sbom_path "$temp")
 
   if ! echo "{}" > "$resolved" 2>/dev/null; then
-    fail "$description" "writing $output_file fails; nothing creates its directory"
+    fail "$description" \
+      "writing $SBOM_PATH_EXPRESSION fails; nothing creates its directory"
     return
   fi
 
@@ -341,6 +375,10 @@ assert_verifies_packages "refuses an SBOM with no packages" \
   '{"spdxVersion":"SPDX-2.3","packages":[]}' false "SBOM lists no packages"
 assert_verifies_packages "refuses an absent SBOM" \
   "" false "SBOM is empty or missing"
+# Malformed output is a different failure from an empty scan, and reporting it
+# as "no packages" sends the operator after the wrong cause.
+assert_verifies_packages "names malformed JSON as such, not as an empty scan" \
+  '{"spdxVersion": truncated' false "SBOM is not valid JSON"
 
 echo
 echo "Refusals"

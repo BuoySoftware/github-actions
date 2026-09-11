@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Attach the generated structure.sql to a tag's GitHub release.
 
-Reads the tag from RELEASE_TAG, falling back to GITHUB_REF_NAME, and the file
-from STRUCTURE_SQL_PATH.
+Reads the tag from RELEASE_TAG, falling back to the pushed tag in GITHUB_REF,
+and the file from STRUCTURE_SQL_PATH.
 """
 
 import os

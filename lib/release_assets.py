@@ -15,31 +15,42 @@ from urllib.parse import quote
 
 import github_api
 
+TAG_REF_PREFIX = "refs/tags/"
+
 
 def fail(message: str) -> NoReturn:
     print(f"::error::{message}", file=sys.stderr)
     sys.exit(1)
 
 
-def resolve(pattern: str) -> list[Path]:
-    """Every existing non-empty file matching the path or glob.
-
-    A glob is accepted because a generator may name its output after the
-    repository and version, which the calling workflow does not know.
-    """
-    root = Path(pattern)
-    relative = str(root.relative_to(root.anchor)) if root.anchor else str(root)
-    matches = sorted(Path(root.anchor or ".").glob(relative))
-    return [path for path in matches if path.is_file() and path.stat().st_size > 0]
+def resolve(path: str) -> Path | None:
+    """The path, when it names an existing non-empty file."""
+    candidate = Path(path)
+    if candidate.is_file() and candidate.stat().st_size > 0:
+        return candidate
+    return None
 
 
 def target_tag() -> str:
     """The tag whose release receives the upload.
 
-    A dispatched run builds an arbitrary tag while GITHUB_REF_NAME names the
-    branch it was launched from, so the caller passes the tag explicitly.
+    A dispatched run builds an arbitrary tag while the ref names the branch it
+    was launched from, so the caller passes the tag explicitly. A run with
+    neither an explicit tag nor a tag ref is refused rather than skipped: a
+    skipped step reports success while the release gains no asset.
     """
-    return os.environ.get("RELEASE_TAG") or os.environ["GITHUB_REF_NAME"]
+    tag = os.environ.get("RELEASE_TAG", "").strip()
+    if tag:
+        return tag
+
+    ref = os.environ.get("GITHUB_REF", "")
+    if ref.startswith(TAG_REF_PREFIX):
+        return ref[len(TAG_REF_PREFIX) :]
+
+    fail(
+        "upload_to_release is true but no tag could be resolved: pass "
+        "release_tag, or run the action on a tag push"
+    )
 
 
 def attach(repository: str, release: dict, path: Path) -> None:
@@ -62,22 +73,27 @@ def attach(repository: str, release: dict, path: Path) -> None:
         fail(f"Could not upload {name}: {github_api.error_message(body)}")
 
 
-def attach_all(pattern: str) -> None:
-    """Attach every file matching the pattern to the target tag's release."""
+def attach_all(path: str) -> None:
+    """Attach the generated file to the target tag's release."""
     repository = os.environ["GITHUB_REPOSITORY"]
     tag = target_tag()
 
-    paths = resolve(pattern)
-    if not paths:
-        fail(f"No non-empty file matches {pattern}")
+    resolved = resolve(path)
+    if resolved is None:
+        fail(f"No non-empty file matches {path}")
 
-    release = github_api.release_for(repository, tag)
-    if release is None:
+    status, body = github_api.release_for(repository, tag)
+    if status == HTTPStatus.NOT_FOUND:
         fail(
-            f"No release exists for {tag}: the release is cut before artifact "
-            "jobs run, and attaching does not create one"
+            f"No release exists for {tag}, or it is still a draft: the release "
+            "is cut before artifact jobs run, attaching does not create one, "
+            "and a draft must be published before assets can attach"
+        )
+    if status != HTTPStatus.OK or not isinstance(body, dict):
+        fail(
+            f"Could not look up the release for {tag}: the API answered "
+            f"{status}: {github_api.error_message(body)}"
         )
 
-    for path in paths:
-        attach(repository, release, path)
-        print(f"{path.name} attached to release {tag}")
+    attach(repository, body, resolved)
+    print(f"{resolved.name} attached to release {tag}")

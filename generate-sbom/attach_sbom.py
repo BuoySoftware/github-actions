@@ -14,26 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 import release_assets
 
-TAG_REF_PREFIX = "refs/tags/"
-
-
-def resolved_tag() -> str:
-    tag = os.environ.get("RELEASE_TAG", "").strip()
-    if tag:
-        return tag
-
-    ref = os.environ.get("GITHUB_REF", "")
-    if ref.startswith(TAG_REF_PREFIX):
-        return ref[len(TAG_REF_PREFIX) :]
-
-    release_assets.fail(
-        "upload_to_release is true but no tag could be resolved: pass "
-        "release_tag, or run the action on a tag push"
-    )
-
 
 def main() -> None:
-    os.environ["RELEASE_TAG"] = resolved_tag()
     release_assets.attach_all(os.environ["SBOM_PATH"])
 
 

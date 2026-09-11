@@ -48,7 +48,7 @@ extract_step() {
 # echoes the requests the step made, one per line. Records the step's exit
 # code for `status_of` and its own output for `output_of`.
 run_step() {
-  local tag="$1" release_exists="$2" fixture="$3" attached_assets="${4:-}"
+  local github_ref="$1" release_exists="$2" fixture="$3" attached_assets="${4:-}"
   local release_tag="${5:-}"
   local step
   step=$(extract_step "Upload to GitHub Release")
@@ -66,7 +66,7 @@ run_step() {
   echo "$attached_assets" > "$fixture/attached_assets"
   : > "$fixture/requests.log"
 
-  python3 "$SCRIPT_DIR/fake_github.py" "$fixture" &
+  python3 "$SCRIPT_DIR/../lib/fake_github.py" "$fixture" &
   local server_pid=$!
   local waited=0
   while [ ! -s "$fixture/port" ] && [ "$waited" -lt 100 ]; do
@@ -85,7 +85,7 @@ run_step() {
     # pipefail`. Step output goes to a file so stdout stays free for the
     # request log.
     env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
-      GITHUB_REF_NAME="$tag" GH_TOKEN="stub" \
+      GITHUB_REF="$github_ref" GH_TOKEN="stub" \
       GITHUB_ACTION_PATH="$SCRIPT_DIR" \
       GITHUB_REPOSITORY="owner/repo" \
       RELEASE_TAG="$release_tag" \
@@ -114,7 +114,7 @@ output_of() {
 assert_uploads_idempotently() {
   local description="$1" tag="$2" attached_assets="$3"
   local log
-  log=$(run_step "$tag" true "$FIXTURES/upload" "$attached_assets")
+  log=$(run_step "refs/tags/$tag" true "$FIXTURES/upload" "$attached_assets")
 
   if [ "$(status_of "$FIXTURES/upload")" -ne 0 ]; then
     printf '  FAIL %s (step exited %s)\n' "$description" "$(status_of "$FIXTURES/upload")"
@@ -158,7 +158,7 @@ assert_uploads_idempotently() {
 assert_fails_without_release() {
   local description="$1" tag="$2"
   local log
-  log=$(run_step "$tag" false "$FIXTURES/upload")
+  log=$(run_step "refs/tags/$tag" false "$FIXTURES/upload")
   local output
   output=$(output_of "$FIXTURES/upload")
 
@@ -185,7 +185,7 @@ assert_fails_without_release() {
 
   # Same line, not merely the same log: only annotation text reaches the run
   # summary and the checks UI.
-  if ! grep -q "^::error::No release exists for $tag" <<< "$output"; then
+  if ! grep -q "^::error::No release exists for $tag, or it is still a draft" <<< "$output"; then
     printf '  FAIL %s (missing release not reported inside the ::error:: annotation)\n' \
       "$description"
     printf '       output: %s\n' "${output//$'\n'/ | }"
@@ -199,9 +199,9 @@ assert_fails_without_release() {
 # RELEASE_TAG takes precedence over GITHUB_REF_NAME, so the release the step
 # looks up is the one named explicitly rather than whatever ref the run is on.
 assert_attaches_to_release_tag() {
-  local description="$1" ref_name="$2" release_tag="$3"
+  local description="$1" github_ref="$2" release_tag="$3"
   local log
-  log=$(run_step "$ref_name" true "$FIXTURES/upload" "" "$release_tag")
+  log=$(run_step "$github_ref" true "$FIXTURES/upload" "" "$release_tag")
   local output
   output=$(output_of "$FIXTURES/upload")
 
@@ -236,6 +236,57 @@ assert_attaches_to_release_tag() {
   printf '  ok   %s\n' "$description"
 }
 
+# The step no longer carries the tag requirement in its `if:`, because a
+# skipped step is green. With no tag to resolve the run must fail instead.
+assert_refuses_without_a_tag() {
+  local description="$1" github_ref="$2"
+  local log output
+  log=$(run_step "$github_ref" true "$FIXTURES/upload")
+  output=$(output_of "$FIXTURES/upload")
+
+  if [ "$(status_of "$FIXTURES/upload")" -eq 0 ]; then
+    printf '  FAIL %s (step succeeded with no tag to attach to)\n' "$description"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if grep -q "^POST /uploads/" <<< "$log"; then
+    printf '  FAIL %s (uploaded somewhere despite having no tag)\n' "$description"
+    printf '       requests: %s\n' "${log//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  # Same line, not merely the same log: only annotation text reaches the run
+  # summary and the checks UI.
+  if ! grep -q "^::error::upload_to_release is true but no tag could be resolved" \
+    <<< "$output"; then
+    printf '  FAIL %s (missing tag not reported inside the ::error:: annotation)\n' \
+      "$description"
+    printf '       output: %s\n' "${output//$'\n'/ | }"
+    failures=$((failures + 1))
+    return
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
+# A tag condition in the `if:` makes a tagless dispatched run skip green, which
+# no request log can observe.
+assert_upload_gate_is_unconditional() {
+  local description="$1" condition
+  condition=$(awk '/name: Upload to GitHub Release/,/shell: bash/' "$ACTION" \
+    | sed -n 's/^ *if: //p')
+
+  if [ "$condition" != "\${{ inputs.upload_to_release == 'true' }}" ]; then
+    printf '  FAIL %s (the upload gate is `%s`)\n' "$description" "$condition"
+    failures=$((failures + 1))
+    return
+  fi
+
+  printf '  ok   %s\n' "$description"
+}
+
 echo "Upload to GitHub Release"
 
 # The release already exists, which create-release guarantees on every push.
@@ -254,9 +305,17 @@ assert_fails_without_release "fails for a final tag too"             "v38.0"
 echo
 echo "Explicit release tag"
 assert_attaches_to_release_tag "attaches to the named tag, not the branch" \
-  "main" "v36.1"
+  "refs/heads/main" "v36.1"
 assert_attaches_to_release_tag "the named tag wins over a tag ref" \
-  "v38.0-rc.1" "v36.1"
+  "refs/tags/v38.0-rc.1" "v36.1"
+
+echo
+echo "Refusals"
+assert_refuses_without_a_tag "fails on a branch push with no named tag" \
+  "refs/heads/main"
+assert_refuses_without_a_tag "fails when there is no ref at all" ""
+assert_upload_gate_is_unconditional \
+  "the upload gate does not skip a dispatched run with no tag ref"
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%d assertion(s) failed\n' "$failures"
