@@ -10,6 +10,7 @@ Usage: python3 lib/test_release_assets.py
 """
 
 import os
+import runpy
 import sys
 import unittest
 from http import HTTPStatus
@@ -199,6 +200,39 @@ class ResolveTest(unittest.TestCase):
         empty = Path(self.directory.name) / "sbom.spdx.json"
         empty.write_text("")
         self.assertIsNone(release_assets.resolve(str(empty)))
+
+
+class ScriptEntryTest(unittest.TestCase):
+    """The upload steps run this module directly, with ASSET_PATH."""
+
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "example-sbom.spdx.json"
+        self.path.write_text('{"spdxVersion": "SPDX-2.3"}')
+
+    def run_script(self, environment):
+        base = {"GITHUB_REPOSITORY": "owner/repo"}
+        with (
+            mock.patch.dict("os.environ", base | environment, clear=True),
+            mock.patch.dict(sys.modules, {"github_api": self.fake}),
+        ):
+            runpy.run_path(str(Path(release_assets.__file__)), run_name="__main__")
+
+    def test_asset_path_is_attached_to_the_named_tag(self):
+        self.fake = FakeApi(release())
+        self.run_script({"ASSET_PATH": str(self.path), "RELEASE_TAG": "v1.0.0"})
+
+        self.assertIn(("release_for", "v1.0.0"), self.fake.calls)
+        self.assertEqual(len(self.fake.uploads), 1)
+        self.assertIn("name=example-sbom.spdx.json", self.fake.uploads[0][0])
+
+    def test_an_absent_asset_path_is_not_a_silent_success(self):
+        self.fake = FakeApi(release())
+        with self.assertRaises(KeyError):
+            self.run_script({"RELEASE_TAG": "v1.0.0"})
+
+        self.assertEqual(self.fake.uploads, [])
 
 
 if __name__ == "__main__":

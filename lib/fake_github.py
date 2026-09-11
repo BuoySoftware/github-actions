@@ -84,10 +84,6 @@ class ReleaseAssetHandler(Handler):
                 self._reply(404, {"message": "Not Found"})
             return
 
-        if re.fullmatch(r"/repos/[^/]+/[^/]+/releases/\d+/assets", url.path):
-            self._reply(200, self._release()["assets"])
-            return
-
         self._reply(404, {"message": f"unexpected GET {url.path}"})
 
     def do_POST(self) -> None:

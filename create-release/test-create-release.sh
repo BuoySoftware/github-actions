@@ -505,7 +505,7 @@ for uploader in generate-structure-sql generate-sbom; do
   if ! grep -q "name: Upload to GitHub Release" "$ROOT_DIR/$uploader/action.yml" 2>/dev/null; then
     fail "$uploader attaches its asset" \
       "its Upload to GitHub Release step is gone; nothing attaches the asset"
-  elif ! grep -rq "release_assets" "$ROOT_DIR/$uploader" 2>/dev/null; then
+  elif ! grep -q "lib/release_assets.py" "$ROOT_DIR/$uploader/action.yml" 2>/dev/null; then
     fail "$uploader attaches its asset" \
       "it does not reach the shared attach, so the refusals are unproven"
   else

@@ -51,7 +51,7 @@ inputs:
     default: "false"
     required: false
   upload_to_release:
-    description: "Upload structure.sql to the GitHub Release (requires a tag push and an existing release)"
+    description: "Upload structure.sql to the GitHub Release (requires an existing release; pass release_tag on a dispatched run)"
     default: "false"
     required: false
 
@@ -129,11 +129,11 @@ runs:
     - name: Upload to GitHub Release
       if: ${{ inputs.upload_to_release == 'true' }}
       env:
+        ASSET_PATH: ${{ inputs.structure_sql_path }}
         GH_TOKEN: ${{ github.token }}
         GITHUB_REF: ${{ github.ref }}
         RELEASE_TAG: ${{ inputs.release_tag }}
-        STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
-      run: python3 "$GITHUB_ACTION_PATH/attach_structure_sql.py"
+      run: python3 "$GITHUB_ACTION_PATH/../lib/release_assets.py"
       shell: bash
 
     - name: Upload as workflow artifact

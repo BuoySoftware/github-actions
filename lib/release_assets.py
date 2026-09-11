@@ -4,6 +4,11 @@
 Shared by the actions that generate a release artifact and upload it. The
 release must already exist: attaching never creates one, so a run whose
 release-cutting step has not happened fails rather than inventing a release.
+
+Run as a script, it attaches the file named by ASSET_PATH to the release for
+the tag in RELEASE_TAG, falling back to the pushed tag in GITHUB_REF:
+
+    python3 lib/release_assets.py
 """
 
 import os
@@ -97,3 +102,7 @@ def attach_all(path: str) -> None:
 
     attach(repository, body, resolved)
     print(f"{resolved.name} attached to release {tag}")
+
+
+if __name__ == "__main__":
+    attach_all(os.environ["ASSET_PATH"])

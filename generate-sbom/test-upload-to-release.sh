@@ -18,6 +18,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACTION="$SCRIPT_DIR/action.yml"
+ACTION_DIR="$SCRIPT_DIR"
+HARNESS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIXTURES=$(mktemp -d)
 trap 'rm -rf "$FIXTURES"' EXIT
 
@@ -25,13 +27,16 @@ ASSET="sbom.spdx.json"
 failures=0
 
 # The SBOM path is declared three times in action.yml: once as the generator's
-# `output-file`, and once per step that reads it back as SBOM_PATH. They must
-# be one expression, or a step reads a file another step never wrote. Echoes
-# that single expression; a disagreement is fatal, because every later
-# assertion resolves the path from here.
+# `output-file`, once as the verify step's SBOM_PATH, and once as the upload
+# step's ASSET_PATH. They must be one expression, or a step reads a file
+# another step never wrote. Echoes that single expression; a disagreement is
+# fatal, because every later assertion resolves the path from here.
 declared_sbom_path() {
   local declarations unique
-  declarations=$(sed -n -e 's/^ *output-file: //p' -e 's/^ *SBOM_PATH: //p' "$ACTION")
+  declarations=$(sed -n \
+    -e 's/^ *output-file: //p' \
+    -e 's/^ *SBOM_PATH: //p' \
+    -e 's/^ *ASSET_PATH: //p' "$ACTION")
   unique=$(sort -u <<< "$declarations")
 
   if [ "$(grep -c . <<< "$declarations")" -lt 3 ]; then
@@ -60,106 +65,16 @@ if ! SBOM_PATH_EXPRESSION=$(declared_sbom_path); then
   exit 1
 fi
 
-# Extract a step's `run:` body. The awk range restarts on each `name:` line, so
-# it lands on the named step regardless of step order. Steps take their values
-# from `env:`, so there are no `${{ }}` expressions left in the body to
-# substitute -- the harness sets the same variables the runner would.
-#
-# A step whose command is short enough to sit on the `run:` line itself is
-# extracted from there.
-extract_step() {
-  local step_name="$1" step
-  step=$(awk "/name: $step_name/,/shell: bash/" "$ACTION")
-
-  if grep -q 'run: |' <<< "$step"; then
-    sed -n '/run: |/,/shell: bash/p' <<< "$step" \
-      | sed '1d;$d' \
-      | sed 's/^        //'
-  else
-    sed -n 's/^      run: //p' <<< "$step"
-  fi
+asset_path_for() {
+  mkdir -p "$1/temp"
+  resolve_sbom_path "temp"
 }
 
-# Runs the step against a fresh stand-in API serving the given fixture, and
-# echoes the requests it made, one per line. Records the exit code for
-# `status_of` and the step's own output for `output_of`.
-#
-# `sbom_written` false leaves the SBOM absent, standing in for a generator that
-# produced nothing.
-run_step() {
-  local github_ref="$1" release_exists="$2" fixture="$3"
-  local attached_assets="${4:-}" release_tag="${5:-}" sbom_written="${6:-true}"
-  local step
-  step=$(extract_step "Upload to GitHub Release")
-  rm -rf "${fixture:?}"
-  mkdir -p "$fixture/temp"
-  local sbom_path
-  sbom_path=$(resolve_sbom_path "temp")
-
-  if [ -z "$step" ]; then
-    # No `run:` body to extract -- the step is a `uses:` action, or was renamed.
-    echo 2 > "$fixture/status"
-    return
-  fi
-
-  if [ "$sbom_written" = true ]; then
-    printf '{"spdxVersion":"SPDX-2.3","packages":[{"name":"example"}]}\n' \
-      > "$fixture/$sbom_path"
-  fi
-  echo "$release_exists" > "$fixture/release_exists"
-  echo "$attached_assets" > "$fixture/attached_assets"
-  : > "$fixture/requests.log"
-
-  python3 "$SCRIPT_DIR/../lib/fake_github.py" "$fixture" &
-  local server_pid=$!
-  local waited=0
-  while [ ! -s "$fixture/port" ] && [ "$waited" -lt 100 ]; do
-    sleep 0.05
-    waited=$((waited + 1))
-  done
-  if [ ! -s "$fixture/port" ]; then
-    echo 3 > "$fixture/status"
-    kill "$server_pid" 2>/dev/null
-    return
-  fi
-
-  (
-    cd "$fixture" || exit 2
-    # The runner invokes `shell: bash` as `bash --noprofile --norc -e -o
-    # pipefail`. Step output goes to a file so stdout stays free for the
-    # request log.
-    env GITHUB_API_URL="http://127.0.0.1:$(cat "$fixture/port")" \
-      GITHUB_REF="$github_ref" GITHUB_REF_NAME="${github_ref##*/}" \
-      GH_TOKEN="stub" \
-      GITHUB_ACTION_PATH="$SCRIPT_DIR" \
-      GITHUB_REPOSITORY="owner/repo" \
-      RELEASE_TAG="$release_tag" \
-      SBOM_PATH="$sbom_path" \
-      bash --noprofile --norc -e -o pipefail -c "$step" \
-      > "$fixture/output" 2>&1
-  )
-  # Callers capture stdout via command substitution, so the status has to travel
-  # through the filesystem rather than a variable the subshell would discard.
-  echo $? > "$fixture/status"
-  kill "$server_pid" 2>/dev/null
-  wait "$server_pid" 2>/dev/null
-  cat "$fixture/requests.log" 2>/dev/null
+write_asset() {
+  printf '{"spdxVersion":"SPDX-2.3","packages":[{"name":"example"}]}\n' > "$1/$2"
 }
 
-# Reads the status recorded by the most recent run_step against `fixture`.
-status_of() {
-  cat "$1/status" 2>/dev/null || echo 2
-}
-
-# Reads the step's own stdout/stderr from the most recent run_step.
-output_of() {
-  cat "$1/output" 2>/dev/null
-}
-
-fail() {
-  printf '  FAIL %s (%s)\n' "$1" "$2"
-  failures=$((failures + 1))
-}
+source "$SCRIPT_DIR/../lib/upload_harness.sh"
 
 assert_attaches() {
   local description="$1" github_ref="$2" release_tag="$3" tag="$4"
@@ -205,36 +120,6 @@ assert_attaches() {
   printf '  ok   %s\n' "$description"
 }
 
-# The step no longer carries the tag requirement in its `if:`, because a
-# skipped step is green. With no tag to resolve the run must fail instead.
-assert_refuses_without_a_tag() {
-  local description="$1" github_ref="$2"
-  local log output
-  log=$(run_step "$github_ref" true "$FIXTURES/upload")
-  output=$(output_of "$FIXTURES/upload")
-
-  if [ "$(status_of "$FIXTURES/upload")" -eq 0 ]; then
-    fail "$description" "step succeeded with no tag to attach to"
-    return
-  fi
-
-  if grep -q "^POST /uploads/" <<< "$log"; then
-    fail "$description" "uploaded somewhere despite having no tag: ${log//$'\n'/ | }"
-    return
-  fi
-
-  # Same line, not merely the same log: only annotation text reaches the run
-  # summary and the checks UI.
-  if ! grep -q "^::error::upload_to_release is true but no tag could be resolved" \
-    <<< "$output"; then
-    fail "$description" \
-      "the missing tag is not reported inside the ::error:: annotation: ${output//$'\n'/ | }"
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
 # The generator writes the SBOM to a path this step only reads. An absent file
 # must stop the run rather than leave the release without its asset.
 assert_refuses_a_missing_sbom() {
@@ -257,22 +142,6 @@ assert_refuses_a_missing_sbom() {
     <<< "$output"; then
     fail "$description" \
       "the missing SBOM is not reported inside the ::error:: annotation: ${output//$'\n'/ | }"
-    return
-  fi
-
-  printf '  ok   %s\n' "$description"
-}
-
-# A tag condition in the `if:` makes a tagless dispatched run skip green, which
-# no request log can observe.
-assert_upload_gate_is_unconditional() {
-  local description="$1" condition
-  condition=$(awk '/name: Upload to GitHub Release/,/shell: bash/' "$ACTION" \
-    | sed -n 's/^ *if: //p')
-
-  if [ "$condition" != "\${{ inputs.upload_to_release == 'true' }}" ]; then
-    fail "$description" \
-      "the upload gate is \`$condition\`, not the bare upload_to_release check"
     return
   fi
 
