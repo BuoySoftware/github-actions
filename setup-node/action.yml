@@ -76,7 +76,9 @@ runs:
       if: ${{ inputs.install-dependencies == 'true' }}
       id: yarn-cache
       with:
-        path: ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
+        path: |
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
+          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/.yarn/install-state.gz
         key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
         restore-keys: |
           ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
@@ -100,7 +102,11 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
+      # Skipped only on an exact cache hit, which restores both node_modules
+      # and the install state file Berry needs to resolve package locations.
+      # A restore-keys hit reports cache-hit false, so a partial restore still
+      # installs.
+      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
       env:
         # Yarn Berry resolves ${GITHUB_PACKAGES_TOKEN} in .yarnrc.yml from the
         # process environment and fails hard when it is unset. Fall back to a
