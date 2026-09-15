@@ -87,6 +87,18 @@ runs:
         restore-keys: |
           ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn2-
 
+    - name: Check whether the restored cache is usable
+      id: restored-deps
+      if: ${{ inputs.install-dependencies == 'true' }}
+      run: |
+        dir="${{ inputs.working-directory }}"
+        if [ -d "${dir:-.}/node_modules" ]; then
+          echo "usable=true" >> $GITHUB_OUTPUT
+        else
+          echo "usable=false" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
       run: echo "//registry.npmjs.org/:_authToken=${{ inputs.npm_access_token }}" > ~/.npmrc
@@ -106,11 +118,12 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn Berry)
-      # Skipped only on an exact cache hit, which restores both node_modules
-      # and the install state file Berry needs to resolve package locations.
-      # A restore-keys hit reports cache-hit false, so a partial restore still
-      # installs.
-      if: ${{ inputs.install-dependencies == 'true' && steps.yarn-cache.outputs.cache-hit != 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
+      # Skipped only on an exact cache hit that restored a node_modules tree,
+      # alongside the install state file Berry needs to resolve package
+      # locations. A restore-keys hit reports cache-hit false, so a partial
+      # restore still installs, and a linker that produces no node_modules
+      # always installs rather than trusting a hit it cannot use.
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' && !(steps.yarn-cache.outputs.cache-hit == 'true' && steps.restored-deps.outputs.usable == 'true') }}
       env:
         # Yarn Berry resolves ${GITHUB_PACKAGES_TOKEN} in .yarnrc.yml from the
         # process environment and fails hard when it is unset. Fall back to a
