@@ -20,10 +20,11 @@ releasing.
 
 ## This repository is public
 
-Naming the repositories and actions involved is expected; that is what the
-repository is for. What does not belong here is anything sensitive: secret or
-token values, environment or infrastructure detail, internal URLs, or anything
-about customers. That applies to commit messages and pull request descriptions
+Do not name the repositories a change was written for or verified against.
+Describe them by the property that matters instead, such as a repository using
+Yarn Berry with the node-modules linker. Also keep out secret or token values,
+environment and infrastructure detail, internal URLs, ticket keys and anything
+about customers. This applies to commit messages and pull request descriptions
 as much as to code.
 
 ## Style

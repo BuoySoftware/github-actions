@@ -15,8 +15,9 @@ Which code paths change, and which are deliberately left alone.
 
 ## How it was verified
 
-A composite action cannot be exercised on its own. Say what you ran it against
-and what the step logs showed, rather than only that the job went green.
+A composite action cannot be exercised on its own. Say what the step logs
+showed, rather than only that the job went green. Describe what you ran it
+against by the property that matters, without naming the repository.
 
 ## Release
 
