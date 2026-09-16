@@ -71,15 +71,48 @@ runs:
       run: corepack enable
       shell: bash
 
+    - name: Resolve dependency paths
+      id: paths
+      run: |
+        dir="${{ inputs.working-directory }}"
+        glob="${dir:-./**}"
+        root="${dir:-.}"
+        pm="$(jq -r '.packageManager // empty' "${root}/package.json" 2>/dev/null || true)"
+        {
+          echo "lockfile=${glob}/yarn.lock"
+          echo "modules=${glob}/node_modules"
+          echo "pm=${pm}"
+          echo "root=${root}"
+          echo "state=${glob}/.yarn/install-state.gz"
+          echo "yarnrc=${glob}/.yarnrc.yml"
+        } >> "$GITHUB_OUTPUT"
+      shell: bash
+
     - name: Restore node_modules cache
       uses: actions/cache@v5
-      if: ${{ inputs.install-dependencies == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && hashFiles(steps.paths.outputs.lockfile) != '' }}
       id: yarn-cache
       with:
-        path: ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
-        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+        path: |
+          ${{ steps.paths.outputs.modules }}
+          ${{ steps.paths.outputs.state }}
+        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-${{ steps.paths.outputs.pm }}-${{ hashFiles(steps.paths.outputs.lockfile, steps.paths.outputs.yarnrc) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn-
+          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-
+
+    - name: Check whether the restored cache is usable
+      id: restored-deps
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
+      run: |
+        root="${{ steps.paths.outputs.root }}"
+        if [ -d "${root}/node_modules" ] && [ -s "${root}/.yarn/install-state.gz" ]; then
+          echo "Dependency tree and install state restored in ${root}, install can be skipped"
+          echo "usable=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No usable dependency tree in ${root}, installing"
+          echo "usable=false" >> "$GITHUB_OUTPUT"
+        fi
+      shell: bash
 
     - name: Authenticate with private NPM package
       if: ${{ inputs.install-dependencies == 'true' && inputs.npm_access_token }}
@@ -100,7 +133,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
 
     - name: Install yarn dependencies (Yarn Berry)
-      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && steps.detect-yarn-berry.outputs.is_berry == 'true' && !(steps.yarn-cache.outputs.cache-hit == 'true' && steps.restored-deps.outputs.usable == 'true') }}
       env:
         # Yarn Berry resolves ${GITHUB_PACKAGES_TOKEN} in .yarnrc.yml from the
         # process environment and fails hard when it is unset. Fall back to a
