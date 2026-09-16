@@ -60,7 +60,7 @@ runs:
     - name: Install Node
       # Pinned like every external consumer pins this repo: an intra-repo
       # branch ref would let main reach "pinned" callers through this edge.
-      uses: BuoySoftware/github-actions/setup-node@975f380abe5471219469f448c84b02061fbae770 # v1.0.1
+      uses: BuoySoftware/github-actions/setup-node@628a43698f8ff5456011d05fdf514e18fde52237 # v1.4.0
       with:
         node-version: ${{ inputs.node_version }}
         find-node-version: ${{ inputs.node_version == '' && 'true' || 'false' }}
