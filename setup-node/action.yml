@@ -71,27 +71,45 @@ runs:
       run: corepack enable
       shell: bash
 
+    - name: Resolve dependency paths
+      id: paths
+      run: |
+        dir="${{ inputs.working-directory }}"
+        glob="${dir:-./**}"
+        root="${dir:-.}"
+        {
+          echo "lockfile=${glob}/yarn.lock"
+          echo "manifest=${root}/package.json"
+          echo "modules=${glob}/node_modules"
+          echo "root=${root}"
+          echo "state=${glob}/.yarn/install-state.gz"
+          echo "yarnrc=${root}/.yarnrc.yml"
+        } >> "$GITHUB_OUTPUT"
+      shell: bash
+
     - name: Restore node_modules cache
       uses: actions/cache@v5
-      if: ${{ inputs.install-dependencies == 'true' }}
+      if: ${{ inputs.install-dependencies == 'true' && hashFiles(steps.paths.outputs.lockfile) != '' }}
       id: yarn-cache
       with:
         path: |
-          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/node_modules
-          ${{ inputs.working-directory == '' && './**' || inputs.working-directory }}/.yarn/install-state.gz
-        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn2-${{ hashFiles(format('{0}/yarn.lock', inputs.working-directory == '' && './**' || inputs.working-directory)) }}
+          ${{ steps.paths.outputs.modules }}
+          ${{ steps.paths.outputs.state }}
+        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-${{ hashFiles(steps.paths.outputs.lockfile, steps.paths.outputs.yarnrc, steps.paths.outputs.manifest) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarn2-
+          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-
 
     - name: Check whether the restored cache is usable
       id: restored-deps
       if: ${{ inputs.install-dependencies == 'true' }}
       run: |
-        dir="${{ inputs.working-directory }}"
-        if [ -d "${dir:-.}/node_modules" ]; then
-          echo "usable=true" >> $GITHUB_OUTPUT
+        root="${{ steps.paths.outputs.root }}"
+        if [ -d "${root}/node_modules" ] && [ -s "${root}/.yarn/install-state.gz" ]; then
+          echo "Dependency tree and install state restored in ${root}, install can be skipped"
+          echo "usable=true" >> "$GITHUB_OUTPUT"
         else
-          echo "usable=false" >> $GITHUB_OUTPUT
+          echo "No usable dependency tree in ${root}, installing"
+          echo "usable=false" >> "$GITHUB_OUTPUT"
         fi
       shell: bash
 
