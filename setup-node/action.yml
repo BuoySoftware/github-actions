@@ -96,9 +96,9 @@ runs:
         path: |
           ${{ steps.paths.outputs.modules }}
           ${{ steps.paths.outputs.state }}
-        key: ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-${{ steps.paths.outputs.pm }}-${{ hashFiles(steps.paths.outputs.lockfile, steps.paths.outputs.yarnrc) }}
+        key: ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-${{ steps.paths.outputs.pm }}-${{ hashFiles(steps.paths.outputs.lockfile, steps.paths.outputs.yarnrc) }}
         restore-keys: |
-          ${{ runner.os }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-
+          ${{ runner.os }}-${{ runner.arch }}-node-${{ steps.find-node-version.outputs.v || inputs.node-version }}-dir-${{ inputs.working-directory }}-yarnstate-
 
     - name: Check whether the restored cache is usable
       id: restored-deps
