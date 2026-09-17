@@ -9,7 +9,6 @@ import json
 import os
 import urllib.error
 import urllib.request
-from http import HTTPStatus
 from typing import Any
 
 
@@ -86,9 +85,11 @@ def _decode(raw: bytes) -> Any:
         return {"message": raw.decode(errors="replace")}
 
 
-def release_for(repository: str, tag: str) -> dict | None:
-    """The tag's release, or None when the lookup does not cleanly find one."""
-    status, release = request("GET", f"/repos/{repository}/releases/tags/{tag}")
-    if status == HTTPStatus.OK and isinstance(release, dict):
-        return release
-    return None
+def release_for(repository: str, tag: str) -> tuple[int, Any]:
+    """The status and body of the tag's release lookup.
+
+    The status is returned rather than flattened to None: a 404 means the
+    release was never cut, while 401, 403 or a rate limit means the lookup
+    itself failed, and the two send the operator somewhere different.
+    """
+    return request("GET", f"/repos/{repository}/releases/tags/{tag}")

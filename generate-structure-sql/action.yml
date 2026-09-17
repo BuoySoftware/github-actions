@@ -12,6 +12,8 @@ description: |
   - python3 on PATH for the release steps, which talk to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
+  - a job token with `permissions: contents: write` when upload_to_release is
+    true: the upload POSTs to the release.
 
 inputs:
   artifact_name_suffix:
@@ -49,7 +51,7 @@ inputs:
     default: "false"
     required: false
   upload_to_release:
-    description: "Upload structure.sql to the GitHub Release (requires a tag push and an existing release)"
+    description: "Upload structure.sql to the GitHub Release (requires an existing release; pass release_tag on a dispatched run)"
     default: "false"
     required: false
 
@@ -122,21 +124,21 @@ runs:
         echo "✅ structure.sql generated successfully"
       shell: bash
 
-    # Attaching never creates a release, so a run without a tag to attach to is
-    # the only case that must be refused: a dispatch names its tag explicitly,
-    # a tag push carries one in github.ref, and a branch push has neither.
+    # The tag requirement is not in the `if:`: a skipped step is green, which
+    # would report success with nothing attached. The script refuses instead.
     - name: Upload to GitHub Release
-      if: ${{ inputs.upload_to_release == 'true' && (inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')) }}
+      if: ${{ inputs.upload_to_release == 'true' }}
       env:
+        ASSET_PATH: ${{ inputs.structure_sql_path }}
         GH_TOKEN: ${{ github.token }}
+        GITHUB_REF: ${{ github.ref }}
         RELEASE_TAG: ${{ inputs.release_tag }}
-        STRUCTURE_SQL_PATH: ${{ inputs.structure_sql_path }}
-      run: python3 "$GITHUB_ACTION_PATH/attach_structure_sql.py"
+      run: python3 "$GITHUB_ACTION_PATH/../lib/release_assets.py"
       shell: bash
 
     - name: Upload as workflow artifact
       if: ${{ inputs.upload_as_artifact == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: structure-sql-${{ inputs.artifact_name_suffix || github.sha }}
         path: ${{ inputs.structure_sql_path }}
