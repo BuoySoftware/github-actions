@@ -33,7 +33,7 @@ inputs:
     required: false
   tag_suffix:
     default: ""
-    description: Appended verbatim to the short and long SHA tags, and to the release ref tag when one applies (include any leading "-"). Applied after the security_patch date suffix when both are set. When set, the build always runs even if an unsuffixed image exists.
+    description: Appended verbatim to the short and long SHA tags, and to the release ref tag when one applies (include any leading "-"). Applied after the security_patch date suffix when both are set. Skip-if-exists inspects the composed (suffixed) tag, so a rerun is a no-op and an unsuffixed image of the same commit does not cause a skip.
     required: false
 
 outputs:
@@ -129,7 +129,6 @@ runs:
         REPOSITORY: ${{ inputs.ecr_repository }}
         SECURITY_PATCH: ${{ inputs.security_patch }}
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
-        TAG_SUFFIX: ${{ inputs.tag_suffix }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
         echo "Base image: ${BASE_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
@@ -141,20 +140,20 @@ runs:
           docker tag $REGISTRY/$REPOSITORY:$RC_TAG $REGISTRY/$REPOSITORY:$REF_TAG
           docker push $REGISTRY/$REPOSITORY:$REF_TAG
           echo "image_exists=true" >> $GITHUB_OUTPUT
-        elif [[ "$SECURITY_PATCH" == "true" ]]; then
-          echo "Security patch build, proceeding with build step" >> $GITHUB_STEP_SUMMARY
-          echo "image_exists=false" >> $GITHUB_OUTPUT
-        elif [[ -n "$TAG_SUFFIX" ]]; then
-          echo "Tag suffix set, proceeding with build step" >> "$GITHUB_STEP_SUMMARY"
-          echo "image_exists=false" >> "$GITHUB_OUTPUT"
         else
-          SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
-          if [[ "$SHORT_IMAGE_EXISTS" == "yes" ]]; then
+          SHORT_IMAGE_EXISTS=""
+          if [[ "$SECURITY_PATCH" != "true" ]]; then
+            SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
+          fi
+          decision=$(SECURITY_PATCH="$SECURITY_PATCH" SHORT_IMAGE_EXISTS="$SHORT_IMAGE_EXISTS" \
+            "${{ github.action_path }}/decide-image-exists.sh")
+          echo "$decision" >> "$GITHUB_OUTPUT"
+          if [[ "$SECURITY_PATCH" == "true" ]]; then
+            echo "Security patch build, proceeding with build step" >> $GITHUB_STEP_SUMMARY
+          elif [[ "$decision" == "image_exists=true" ]]; then
             echo "Image already exists, skipping build step" >> $GITHUB_STEP_SUMMARY
-            echo "image_exists=true" >> $GITHUB_OUTPUT
           else
             echo "Image not found, proceeding with build step" >> $GITHUB_STEP_SUMMARY
-            echo "image_exists=false" >> $GITHUB_OUTPUT
           fi
         fi
 
