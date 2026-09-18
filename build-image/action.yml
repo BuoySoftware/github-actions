@@ -141,11 +141,11 @@ runs:
           docker push $REGISTRY/$REPOSITORY:$REF_TAG
           echo "image_exists=true" >> $GITHUB_OUTPUT
         else
-          SHORT_IMAGE_EXISTS=""
+          SHORT_SHA_TAG_EXISTS=""
           if [[ "$SECURITY_PATCH" != "true" ]]; then
-            SHORT_IMAGE_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
+            SHORT_SHA_TAG_EXISTS=$(docker manifest inspect $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG > /dev/null 2>&1 && echo yes || echo no)
           fi
-          decision=$(SECURITY_PATCH="$SECURITY_PATCH" SHORT_IMAGE_EXISTS="$SHORT_IMAGE_EXISTS" \
+          decision=$(SHORT_SHA_TAG_EXISTS="$SHORT_SHA_TAG_EXISTS" \
             "${{ github.action_path }}/decide-image-exists.sh")
           echo "$decision" >> "$GITHUB_OUTPUT"
           if [[ "$SECURITY_PATCH" == "true" ]]; then
