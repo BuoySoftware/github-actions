@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import verify_release_assets as verify
 
+github_api = verify.github_api
+
 RELEASE = "/repos/owner/repo/releases/tags/v1.2.3"
 ASSETS = "/repos/owner/repo/releases/1234/assets"
 
@@ -35,6 +37,10 @@ class FakeApi:
     def request(self, method, path, payload=None):
         self.calls.append((method, path))
         return self.responses[method, path]
+
+    def release_assets(self, repository, release):
+        with mock.patch.object(github_api, "request", self.request):
+            return github_api.release_assets(repository, release)
 
     def error_message(self, body):
         return body.get("message", "?") if isinstance(body, dict) else "?"

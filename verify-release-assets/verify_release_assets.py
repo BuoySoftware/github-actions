@@ -22,8 +22,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 import github_api
 
-PAGE_SIZE = 100
-
 
 def fail(message: str) -> NoReturn:
     print(f"::error::{message}", file=sys.stderr)
@@ -43,20 +41,10 @@ def release_id(repository: str, tag: str) -> int:
 
 
 def attached_names(repository: str, release: int) -> list[str]:
-    names: list[str] = []
-    page = 1
-    while True:
-        status, assets = github_api.request(
-            "GET",
-            f"/repos/{repository}/releases/{release}/assets"
-            f"?per_page={PAGE_SIZE}&page={page}",
-        )
-        if status != HTTPStatus.OK or not isinstance(assets, list):
-            fail(f"Could not list release assets: {github_api.error_message(assets)}")
-        names.extend(asset["name"] for asset in assets)
-        if len(assets) < PAGE_SIZE:
-            return names
-        page += 1
+    status, assets = github_api.release_assets(repository, release)
+    if status != HTTPStatus.OK or not isinstance(assets, list):
+        fail(f"Could not list release assets: {github_api.error_message(assets)}")
+    return [asset["name"] for asset in assets]
 
 
 def main() -> None:

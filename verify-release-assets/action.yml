@@ -11,7 +11,8 @@ description: |
   producer does not fail every push.
 
   Prerequisites (caller must provide):
-  - A tag push. The tag is read from github.ref_name.
+  - A tag to inspect: a tag push, or `tag` naming one explicitly. A dispatched
+    run's github.ref_name is the branch it was launched from, not the tag.
   - A token able to read releases.
   - python3 on PATH. No checkout is needed.
 
@@ -22,6 +23,10 @@ inputs:
   expect:
     description: "Expected asset names, one per line; `*`-patterns allowed"
     required: true
+  tag:
+    description: "Tag whose release is inspected. Defaults to the pushed tag"
+    default: ""
+    required: false
 
 runs:
   using: "composite"
@@ -30,7 +35,7 @@ runs:
     - name: Assert every expected asset is attached
       env:
         GH_TOKEN: ${{ inputs.token }}
-        TAG: ${{ github.ref_name }}
+        TAG: ${{ inputs.tag || github.ref_name }}
         EXPECT: ${{ inputs.expect }}
       run: python3 "$GITHUB_ACTION_PATH/verify_release_assets.py"
       shell: bash

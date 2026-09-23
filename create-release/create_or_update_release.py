@@ -58,6 +58,18 @@ def generated_notes(repository: str, tag: str, notes_start: str) -> str:
     return str(notes["body"])
 
 
+def existing_release(repository: str, tag: str) -> dict | None:
+    """The tag's release, or None when the lookup does not cleanly find one.
+
+    Any failed lookup counts as absence here, so the create that follows
+    reports the real error rather than this one.
+    """
+    status, release = github_api.release_for(repository, tag)
+    if status == HTTPStatus.OK and isinstance(release, dict):
+        return release
+    return None
+
+
 def main() -> None:
     tag = os.environ["TAG"]
     repository = os.environ["GITHUB_REPOSITORY"]
@@ -65,9 +77,7 @@ def main() -> None:
     notes_start = os.environ["NOTES_START"]
     prerelease = os.environ["PRERELEASE"]
 
-    # Any failed lookup counts as absence, so the create that follows
-    # reports the real error.
-    release = github_api.release_for(repository, tag)
+    release = existing_release(repository, tag)
     if release is not None:
         print(f"Release {tag} already exists; correcting its flags")
         reconcile(repository, int(release["id"]), tag, prerelease, latest)
@@ -99,7 +109,7 @@ def main() -> None:
 
     # Another job pushing the same tag may have won the race; its release is
     # the one this run wanted.
-    release = github_api.release_for(repository, tag)
+    release = existing_release(repository, tag)
     if release is not None:
         print(f"Release {tag} appeared concurrently; correcting its flags")
         reconcile(repository, int(release["id"]), tag, prerelease, latest)

@@ -12,6 +12,8 @@ import urllib.request
 from http import HTTPStatus
 from typing import Any
 
+PAGE_SIZE = 100
+
 
 def request(method: str, path: str, payload: dict | None = None) -> tuple[int, Any]:
     """The response status and decoded JSON body for an API call.
@@ -86,9 +88,34 @@ def _decode(raw: bytes) -> Any:
         return {"message": raw.decode(errors="replace")}
 
 
-def release_for(repository: str, tag: str) -> dict | None:
-    """The tag's release, or None when the lookup does not cleanly find one."""
-    status, release = request("GET", f"/repos/{repository}/releases/tags/{tag}")
-    if status == HTTPStatus.OK and isinstance(release, dict):
-        return release
-    return None
+def release_for(repository: str, tag: str) -> tuple[int, Any]:
+    """The status and body of the tag's release lookup.
+
+    The status is returned rather than flattened to None: a 404 means the
+    release was never cut, while 401, 403 or a rate limit means the lookup
+    itself failed, and the two send the operator somewhere different.
+    """
+    return request("GET", f"/repos/{repository}/releases/tags/{tag}")
+
+
+def release_assets(repository: str, release: int) -> tuple[int, Any]:
+    """The status and every asset of the release, read page by page.
+
+    The copy of the assets embedded in the release object is truncated, so a
+    caller that reads it misses assets once enough accumulate. A failed page
+    returns that page's status and body.
+    """
+    assets: list[Any] = []
+    page = 1
+    while True:
+        status, body = request(
+            "GET",
+            f"/repos/{repository}/releases/{release}/assets"
+            f"?per_page={PAGE_SIZE}&page={page}",
+        )
+        if status != HTTPStatus.OK or not isinstance(body, list):
+            return status, body
+        assets.extend(body)
+        if len(body) < PAGE_SIZE:
+            return status, assets
+        page += 1
