@@ -73,6 +73,13 @@ runs:
         echo "✅ SBOM generated successfully"
       shell: bash
 
+    - name: Upload as workflow artifact
+      if: ${{ inputs.upload_as_artifact == 'true' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: sbom-${{ inputs.artifact_name_suffix || github.sha }}
+        path: ${{ runner.temp }}/${{ inputs.asset_name }}
+
     - name: Upload to GitHub Release
       if: ${{ inputs.upload_to_release == 'true' }}
       env:
@@ -82,10 +89,3 @@ runs:
         RELEASE_TAG: ${{ inputs.release_tag }}
       run: python3 "$GITHUB_ACTION_PATH/../lib/release_assets.py"
       shell: bash
-
-    - name: Upload as workflow artifact
-      if: ${{ inputs.upload_as_artifact == 'true' }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: sbom-${{ inputs.artifact_name_suffix || github.sha }}
-        path: ${{ runner.temp }}/${{ inputs.asset_name }}

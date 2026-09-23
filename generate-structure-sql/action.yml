@@ -124,6 +124,13 @@ runs:
         echo "✅ structure.sql generated successfully"
       shell: bash
 
+    - name: Upload as workflow artifact
+      if: ${{ inputs.upload_as_artifact == 'true' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: structure-sql-${{ inputs.artifact_name_suffix || github.sha }}
+        path: ${{ inputs.structure_sql_path }}
+
     # The tag requirement is not in the `if:`: a skipped step is green, which
     # would report success with nothing attached. The script refuses instead.
     - name: Upload to GitHub Release
@@ -135,10 +142,3 @@ runs:
         RELEASE_TAG: ${{ inputs.release_tag }}
       run: python3 "$GITHUB_ACTION_PATH/../lib/release_assets.py"
       shell: bash
-
-    - name: Upload as workflow artifact
-      if: ${{ inputs.upload_as_artifact == 'true' }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: structure-sql-${{ inputs.artifact_name_suffix || github.sha }}
-        path: ${{ inputs.structure_sql_path }}

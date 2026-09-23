@@ -61,7 +61,10 @@ def target_tag() -> str:
 def attach(repository: str, release: dict, path: Path) -> None:
     """Upload the file to the release, replacing a same-named earlier asset."""
     name = path.name
-    for asset in release.get("assets", []):
+    status, assets = github_api.release_assets(repository, release["id"])
+    if status != HTTPStatus.OK or not isinstance(assets, list):
+        fail(f"Could not list the release's assets: {github_api.error_message(assets)}")
+    for asset in assets:
         if asset["name"] == name:
             status, body = github_api.request(
                 "DELETE", f"/repos/{repository}/releases/assets/{asset['id']}"

@@ -22,6 +22,7 @@ from unittest import mock
 # the tests are run from the repository root as CI does.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import github_api
 import release_assets
 
 UPLOAD = "https://uploads.example/repos/owner/repo/releases/1/assets{?name,label}"
@@ -33,11 +34,13 @@ class FakeApi:
     def __init__(
         self,
         release,
+        pages=((),),
         upload_status=HTTPStatus.CREATED,
         lookup_status=HTTPStatus.OK,
         delete_status=HTTPStatus.NO_CONTENT,
     ):
         self.release = release
+        self.pages = pages
         self.upload_status = upload_status
         self.lookup_status = lookup_status
         self.delete_status = delete_status
@@ -50,7 +53,14 @@ class FakeApi:
 
     def request(self, method, path, payload=None):
         self.calls.append((method, path))
+        if method == "GET":
+            page = int(path.rsplit("page=", 1)[1])
+            return HTTPStatus.OK, list(self.pages[page - 1])
         return self.delete_status, {"message": "Forbidden"}
+
+    def release_assets(self, repository, release):
+        with mock.patch.object(github_api, "request", self.request):
+            return github_api.release_assets(repository, release)
 
     def upload(self, url, data):
         self.uploads.append((url, data))
@@ -60,8 +70,8 @@ class FakeApi:
         return body.get("message", "?") if isinstance(body, dict) else "?"
 
 
-def release(assets=()):
-    return {"upload_url": UPLOAD, "assets": list(assets)}
+def release():
+    return {"id": 1, "upload_url": UPLOAD}
 
 
 def run(fake, path, environment):
@@ -109,10 +119,19 @@ class AttachAllTest(unittest.TestCase):
 
     def test_existing_asset_is_deleted_before_reupload(self):
         assets = [{"name": "example-sbom.spdx.json", "id": 99}]
-        fake = FakeApi(release(assets))
+        fake = FakeApi(release(), pages=(assets,))
         run(fake, str(self.path), {"GITHUB_REF": "refs/tags/v1.0.0"})
 
         self.assertIn(("DELETE", "/repos/owner/repo/releases/assets/99"), fake.calls)
+        self.assertEqual(len(fake.uploads), 1)
+
+    def test_an_existing_asset_past_the_first_page_is_deleted_before_reupload(self):
+        first = [{"name": f"other-{index}", "id": index} for index in range(100)]
+        second = [{"name": "example-sbom.spdx.json", "id": 999}]
+        fake = FakeApi(release() | {"assets": first}, pages=(first, second))
+        run(fake, str(self.path), {"GITHUB_REF": "refs/tags/v1.0.0"})
+
+        self.assertIn(("DELETE", "/repos/owner/repo/releases/assets/999"), fake.calls)
         self.assertEqual(len(fake.uploads), 1)
 
     def test_a_branch_push_with_no_named_tag_is_refused(self):
@@ -171,7 +190,7 @@ class AttachAllTest(unittest.TestCase):
         # A replacement that cannot delete must not upload: the release would
         # otherwise keep the stale asset under a collided name.
         assets = [{"name": "example-sbom.spdx.json", "id": 99}]
-        fake = FakeApi(release(assets), delete_status=HTTPStatus.FORBIDDEN)
+        fake = FakeApi(release(), pages=(assets,), delete_status=HTTPStatus.FORBIDDEN)
         refusal(self, fake, str(self.path), {"GITHUB_REF": "refs/tags/v1.0.0"})
 
         self.assertEqual(fake.uploads, [])

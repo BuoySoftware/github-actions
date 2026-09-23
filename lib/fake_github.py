@@ -63,15 +63,16 @@ class ReleaseAssetHandler(Handler):
     def _release(self) -> dict:
         assert isinstance(self.server, HTTPServer)
         port = self.server.server_port
-        assets = [
+        return {
+            "id": 1234,
+            "upload_url": f"http://127.0.0.1:{port}/uploads/releases/1234/assets{{?name,label}}",
+        }
+
+    def _assets(self) -> list:
+        return [
             {"name": name, "id": index + 1}
             for index, name in enumerate(self.setting("attached_assets", "").split())
         ]
-        return {
-            "id": 1234,
-            "assets": assets,
-            "upload_url": f"http://127.0.0.1:{port}/uploads/releases/1234/assets{{?name,label}}",
-        }
 
     def do_GET(self) -> None:
         self._log_request()
@@ -82,6 +83,10 @@ class ReleaseAssetHandler(Handler):
                 self._reply(200, self._release())
             else:
                 self._reply(404, {"message": "Not Found"})
+            return
+
+        if re.fullmatch(r"/repos/[^/]+/[^/]+/releases/1234/assets", url.path):
+            self._reply(200, self._assets())
             return
 
         self._reply(404, {"message": f"unexpected GET {url.path}"})
