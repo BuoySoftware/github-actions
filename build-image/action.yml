@@ -173,7 +173,9 @@ runs:
         # The raw commit, not a tag: this is baked into the image as its own
         # identity, and tag suffixes would break exact-match lookups on it.
         SHA: ${{ steps.current-git-details.outputs.sha }}
+        REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
       run: |
+        COMMIT="${SHA#sha-}"
         TAGS="-t $REGISTRY/$REPOSITORY:$SHORT_SHA_TAG -t $REGISTRY/$REPOSITORY:$LONG_SHA_TAG"
         if [ -n "$REF_TAG" ]; then
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
@@ -187,7 +189,7 @@ runs:
           BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_IMAGE"
         fi
 
-        docker build . $TAGS $BUILD_ARGS $BASE_ARGS --build-arg CURR_GIT_SHA="$SHA"
+        docker build . $TAGS $BUILD_ARGS $BASE_ARGS --build-arg CURR_GIT_SHA="$SHA" --label org.opencontainers.image.revision="$COMMIT" --label org.opencontainers.image.source="$REPOSITORY_URL"
         docker push --all-tags $REGISTRY/$REPOSITORY
 
     - name: Notify Slack on failure
