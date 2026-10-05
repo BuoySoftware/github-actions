@@ -14,3 +14,5 @@ updates:
       all-actions:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "BuoySoftware/github-actions*"
