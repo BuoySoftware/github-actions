@@ -11,6 +11,11 @@ description: |
 
   Prerequisites (caller must provide):
   - actions/checkout
+  - installed dependencies, when the SBOM has to carry licenses. Syft reads
+    names and versions from lock files, but licenses only from installed
+    package metadata, so scanning a bare checkout reports NOASSERTION for
+    every component. Installing first can pull dependencies of dependencies
+    into the checkout; see the exclude input.
   - python3 on PATH for the release step, which talks to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
@@ -25,6 +30,14 @@ inputs:
   asset_name:
     description: "File name the SBOM is attached to the release under"
     default: "sbom.spdx.json"
+    required: false
+  exclude:
+    description: |
+      Newline-separated Syft exclude globs, one per line. Each must start with
+      ./, */ or **/, or Syft rejects it. Use this for paths a package manager
+      installs into the checkout that carry dependencies of their own, such as
+      a Ruby bundle holding gems that ship their own JavaScript lock files.
+    default: ""
     required: false
   path:
     description: "Directory scanned for dependencies"
@@ -47,12 +60,41 @@ runs:
   using: "composite"
 
   steps:
+    - name: Build Syft config
+      id: syft-config
+      env:
+        EXCLUDE: ${{ inputs.exclude }}
+      run: |
+        config="${RUNNER_TEMP}/syft.yaml"
+
+        # Syft reads the workflow files in the checkout and catalogues every
+        # action they reference as a component. Those run on the build machine
+        # and are not shipped, so they do not belong in a release SBOM. One tag
+        # covers both GitHub Actions catalogers.
+        printf 'select-catalogers:\n  - "-github-actions"\n' > "$config"
+
+        if [ -n "$(printf '%s' "$EXCLUDE" | tr -d '[:space:]')" ]; then
+          printf 'exclude:\n' >> "$config"
+          printf '%s\n' "$EXCLUDE" | while IFS= read -r pattern; do
+            if [ -n "$pattern" ]; then
+              printf '  - "%s"\n' "$pattern" >> "$config"
+            fi
+          done
+        fi
+
+        echo "path=$config" >> "$GITHUB_OUTPUT"
+        echo "::group::Syft config"
+        cat "$config"
+        echo "::endgroup::"
+      shell: bash
+
     # upload-release-assets is off because this action owns the upload: the
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       with:
         path: ${{ inputs.path }}
+        config: ${{ steps.syft-config.outputs.path }}
         format: spdx-json
         output-file: ${{ runner.temp }}/${{ inputs.asset_name }}
         upload-artifact: "false"
