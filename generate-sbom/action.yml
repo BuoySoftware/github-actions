@@ -70,8 +70,8 @@ runs:
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       env:
         # Syft catalogs every action the workflow files reference. Those run
-        # on the build machine and are not shipped. The tag covers both
-        # GitHub Actions catalogers.
+        # on the build machine and are not shipped. Deselecting by the
+        # github-actions tag covers both catalogers that carry it.
         SYFT_SELECT_CATALOGERS: "-github-actions"
         SYFT_EXCLUDE: ${{ inputs.exclude }}
       with:
