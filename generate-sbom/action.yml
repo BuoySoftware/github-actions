@@ -12,10 +12,9 @@ description: |
   Prerequisites (caller must provide):
   - actions/checkout
   - installed dependencies, when the SBOM has to carry licenses. Syft reads
-    names and versions from lock files, but licenses only from installed
-    package metadata, so scanning a bare checkout reports NOASSERTION for
-    every component. Installing first can pull dependencies of dependencies
-    into the checkout; see the exclude input.
+    licenses only from installed package metadata, so a bare checkout scans
+    as NOASSERTION throughout. Installing also pulls third-party trees into
+    the checkout; see the exclude input.
   - python3 on PATH for the release step, which talks to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
@@ -33,22 +32,15 @@ inputs:
     required: false
   exclude:
     description: |
-      Syft exclude globs, comma separated, on one line, no spaces. This is
-      passed to SYFT_EXCLUDE as given.
+      Syft exclude globs, passed to SYFT_EXCLUDE as given. Comma separated,
+      one line, no spaces. Each pattern starts with ./, */ or **/.
 
-      Write it as a plain single-line string. A multi-line YAML value does not
-      work and does not complain: Syft reads the whole thing as one pattern,
-      which still starts with ./ so it passes validation, matches nothing, and
-      the run succeeds with an SBOM quietly missing its exclusions. A space
-      after a comma does fail loudly.
+      A multi-line value fails silently: Syft reads the whole block as one
+      pattern, which still starts with ./, so the run succeeds with nothing
+      excluded.
 
-      Each pattern must start with ./, */ or **/. A pattern cannot contain a
-      comma, so brace alternation is out.
-
-      Use this for paths a package manager installs into the checkout that
-      carry dependencies of their own: a Ruby bundle holds gems that ship
-      their own JavaScript and Ruby lock files, and those lock files describe
-      the gem's dependencies, not yours.
+      Use it for paths a package manager installs into the checkout that
+      carry lock files of their own, such as gems shipping a yarn.lock.
     default: ""
     required: false
   path:
@@ -77,10 +69,9 @@ runs:
     - name: Generate SBOM
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       env:
-        # Syft reads the workflow files in the checkout and catalogues every
-        # action they reference as a component. Those run on the build machine
-        # and are not shipped, so they do not belong in a release SBOM. One tag
-        # covers both GitHub Actions catalogers.
+        # Syft catalogues every action the workflow files reference. Those run
+        # on the build machine and are not shipped. The tag covers both
+        # GitHub Actions catalogers.
         SYFT_SELECT_CATALOGERS: "-github-actions"
         SYFT_EXCLUDE: ${{ inputs.exclude }}
       with:
