@@ -33,11 +33,22 @@ inputs:
     required: false
   exclude:
     description: |
-      Newline-separated Syft exclude globs, one per line. Each must start with
-      ./, */ or **/, or Syft rejects it. A pattern cannot contain a comma, so
-      brace alternation is out. Use this for paths a package manager installs
-      into the checkout that carry dependencies of their own, such as a Ruby
-      bundle holding gems that ship their own JavaScript lock files.
+      Syft exclude globs, comma separated, on one line, no spaces. This is
+      passed to SYFT_EXCLUDE as given.
+
+      Write it as a plain single-line string. A multi-line YAML value does not
+      work and does not complain: Syft reads the whole thing as one pattern,
+      which still starts with ./ so it passes validation, matches nothing, and
+      the run succeeds with an SBOM quietly missing its exclusions. A space
+      after a comma does fail loudly.
+
+      Each pattern must start with ./, */ or **/. A pattern cannot contain a
+      comma, so brace alternation is out.
+
+      Use this for paths a package manager installs into the checkout that
+      carry dependencies of their own: a Ruby bundle holds gems that ship
+      their own JavaScript and Ruby lock files, and those lock files describe
+      the gem's dependencies, not yours.
     default: ""
     required: false
   path:
@@ -61,21 +72,6 @@ runs:
   using: "composite"
 
   steps:
-    # SYFT_EXCLUDE is a comma-separated list. A newline-separated one is read
-    # as a single pattern, which starts with ./ so it passes validation and
-    # then matches nothing: Syft excludes silently, exits 0, and the SBOM is
-    # wrong with no sign of it. Take newlines, which is what a workflow input
-    # naturally is, and hand Syft the form it parses.
-    - name: Normalise the exclude list
-      id: exclude
-      env:
-        EXCLUDE: ${{ inputs.exclude }}
-      run: |
-        patterns=$(printf '%s' "$EXCLUDE" | tr '\n' ',' | tr -s ',' | sed 's/^,//; s/,$//')
-        echo "patterns=${patterns}" >> "$GITHUB_OUTPUT"
-        echo "Syft exclusions: ${patterns:-(none)}"
-      shell: bash
-
     # upload-release-assets is off because this action owns the upload: the
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
@@ -86,7 +82,7 @@ runs:
         # and are not shipped, so they do not belong in a release SBOM. One tag
         # covers both GitHub Actions catalogers.
         SYFT_SELECT_CATALOGERS: "-github-actions"
-        SYFT_EXCLUDE: ${{ steps.exclude.outputs.patterns }}
+        SYFT_EXCLUDE: ${{ inputs.exclude }}
       with:
         path: ${{ inputs.path }}
         format: spdx-json
