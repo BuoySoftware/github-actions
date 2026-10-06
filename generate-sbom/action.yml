@@ -34,9 +34,10 @@ inputs:
   exclude:
     description: |
       Newline-separated Syft exclude globs, one per line. Each must start with
-      ./, */ or **/, or Syft rejects it. Use this for paths a package manager
-      installs into the checkout that carry dependencies of their own, such as
-      a Ruby bundle holding gems that ship their own JavaScript lock files.
+      ./, */ or **/, or Syft rejects it. A pattern cannot contain a comma, so
+      brace alternation is out. Use this for paths a package manager installs
+      into the checkout that carry dependencies of their own, such as a Ruby
+      bundle holding gems that ship their own JavaScript lock files.
     default: ""
     required: false
   path:
@@ -60,41 +61,34 @@ runs:
   using: "composite"
 
   steps:
-    - name: Build Syft config
-      id: syft-config
+    # SYFT_EXCLUDE is a comma-separated list. A newline-separated one is read
+    # as a single pattern, which starts with ./ so it passes validation and
+    # then matches nothing: Syft excludes silently, exits 0, and the SBOM is
+    # wrong with no sign of it. Take newlines, which is what a workflow input
+    # naturally is, and hand Syft the form it parses.
+    - name: Normalise the exclude list
+      id: exclude
       env:
         EXCLUDE: ${{ inputs.exclude }}
       run: |
-        config="${RUNNER_TEMP}/syft.yaml"
-
-        # Syft reads the workflow files in the checkout and catalogues every
-        # action they reference as a component. Those run on the build machine
-        # and are not shipped, so they do not belong in a release SBOM. One tag
-        # covers both GitHub Actions catalogers.
-        printf 'select-catalogers:\n  - "-github-actions"\n' > "$config"
-
-        if [ -n "$(printf '%s' "$EXCLUDE" | tr -d '[:space:]')" ]; then
-          printf 'exclude:\n' >> "$config"
-          printf '%s\n' "$EXCLUDE" | while IFS= read -r pattern; do
-            if [ -n "$pattern" ]; then
-              printf '  - "%s"\n' "$pattern" >> "$config"
-            fi
-          done
-        fi
-
-        echo "path=$config" >> "$GITHUB_OUTPUT"
-        echo "::group::Syft config"
-        cat "$config"
-        echo "::endgroup::"
+        patterns=$(printf '%s' "$EXCLUDE" | tr '\n' ',' | tr -s ',' | sed 's/^,//; s/,$//')
+        echo "patterns=${patterns}" >> "$GITHUB_OUTPUT"
+        echo "Syft exclusions: ${patterns:-(none)}"
       shell: bash
 
     # upload-release-assets is off because this action owns the upload: the
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      env:
+        # Syft reads the workflow files in the checkout and catalogues every
+        # action they reference as a component. Those run on the build machine
+        # and are not shipped, so they do not belong in a release SBOM. One tag
+        # covers both GitHub Actions catalogers.
+        SYFT_SELECT_CATALOGERS: "-github-actions"
+        SYFT_EXCLUDE: ${{ steps.exclude.outputs.patterns }}
       with:
         path: ${{ inputs.path }}
-        config: ${{ steps.syft-config.outputs.path }}
         format: spdx-json
         output-file: ${{ runner.temp }}/${{ inputs.asset_name }}
         upload-artifact: "false"
