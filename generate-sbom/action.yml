@@ -13,8 +13,9 @@ description: |
   - actions/checkout
   - installed dependencies, when the SBOM has to carry licenses. Syft reads
     licenses only from installed package metadata, so a bare checkout scans
-    as NOASSERTION throughout. Installing also pulls third-party trees into
-    the checkout; see the exclude input.
+    as NOASSERTION throughout. A Ruby bundle installed under vendor/bundle
+    is handled: the lock files each gem ships for its own development are
+    excluded, the gemspecs the licenses come from are not.
   - python3 on PATH for the release step, which talks to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
@@ -29,19 +30,6 @@ inputs:
   asset_name:
     description: "File name the SBOM is attached to the release under"
     default: "sbom.spdx.json"
-    required: false
-  exclude:
-    description: |
-      Syft exclude globs, passed to SYFT_EXCLUDE as given. Comma separated,
-      one line, no spaces. Each pattern starts with ./, */ or **/.
-
-      A multi-line value fails silently: Syft reads the whole block as one
-      pattern, which still starts with ./, so the run succeeds with nothing
-      excluded.
-
-      Use it for paths a package manager installs into the checkout that
-      carry lock files of their own, such as gems shipping a yarn.lock.
-    default: ""
     required: false
   path:
     description: "Directory scanned for dependencies"
@@ -70,7 +58,13 @@ runs:
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       env:
         SYFT_SELECT_CATALOGERS: "-github-actions"
-        SYFT_EXCLUDE: ${{ inputs.exclude }}
+        # An installed gem ships the lock files its own maintainers use, which
+        # describe their test suite rather than anything we run. Syft reads
+        # them and reports the contents as the caller's dependencies, at the
+        # versions those maintainers pinned. Keep specifications/*.gemspec:
+        # that is the only place gem licenses come from. SYFT_EXCLUDE splits
+        # on commas only, so this has to stay one line with no spaces.
+        SYFT_EXCLUDE: "./vendor/bundle/**/Gemfile.lock,./vendor/bundle/**/yarn.lock,./vendor/bundle/**/package-lock.json,./vendor/bundle/**/package.json"
       with:
         path: ${{ inputs.path }}
         format: spdx-json
