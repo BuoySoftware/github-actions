@@ -121,8 +121,6 @@ runs:
       id: check-image-exists
       shell: bash
       env:
-        BASE_IMAGE: ${{ inputs.base_image }}
-        BUILDER_IMAGE: ${{ inputs.builder_image }}
         RC_TAG: ${{ inputs.release_candidate_tag && format('tag-{0}', inputs.release_candidate_tag) || '' }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -131,8 +129,6 @@ runs:
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
-        echo "Base image: ${BASE_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
-        echo "Builder image: ${BUILDER_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
@@ -157,10 +153,36 @@ runs:
           fi
         fi
 
+    - name: Resolve base images
+      id: base-images
+      if: steps.check-image-exists.outputs.image_exists == 'false'
+      shell: bash
+      env:
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
+      run: |
+        resolved="$("${{ github.action_path }}/resolve-base-images.sh")"
+        echo "$resolved" >> "$GITHUB_OUTPUT"
+        field() {
+          local value
+          value="$(printf '%s\n' "$resolved" | sed -n "s/^$1=//p")"
+          printf '%s' "${value:-not resolved}"
+        }
+        {
+          echo "Base image: $(field base_name)${BASE_IMAGE:+ (override)}"
+          echo "Base digest: $(field base_digest)"
+          echo "Builder image: $(field builder_name)${BUILDER_IMAGE:+ (override)}"
+          echo "Builder digest: $(field builder_digest)"
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Build, tag, and push docker image to Amazon ECR
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
+        BASE_NAME: ${{ steps.base-images.outputs.base_name }}
+        BASE_DIGEST: ${{ steps.base-images.outputs.base_digest }}
+        BUILDER_NAME: ${{ steps.base-images.outputs.builder_name }}
+        BUILDER_DIGEST: ${{ steps.base-images.outputs.builder_digest }}
         BASE_IMAGE: ${{ inputs.base_image }}
         BUILDER_IMAGE: ${{ inputs.builder_image }}
         BUILD_ARGS: ${{ inputs.build_args }}
@@ -182,10 +204,18 @@ runs:
         fi
 
         BASE_ARGS=""
-        if [ -n "$BASE_IMAGE" ]; then
+        if [ -n "$BASE_DIGEST" ]; then
+          BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_NAME@$BASE_DIGEST"
+          BASE_ARGS="$BASE_ARGS --label org.opencontainers.image.base.name=$BASE_NAME"
+          BASE_ARGS="$BASE_ARGS --label org.opencontainers.image.base.digest=$BASE_DIGEST"
+        elif [ -n "$BASE_IMAGE" ]; then
           BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_IMAGE"
         fi
-        if [ -n "$BUILDER_IMAGE" ]; then
+        if [ -n "$BUILDER_DIGEST" ]; then
+          BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_NAME@$BUILDER_DIGEST"
+          BASE_ARGS="$BASE_ARGS --label com.buoysoftware.image.builder.name=$BUILDER_NAME"
+          BASE_ARGS="$BASE_ARGS --label com.buoysoftware.image.builder.digest=$BUILDER_DIGEST"
+        elif [ -n "$BUILDER_IMAGE" ]; then
           BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_IMAGE"
         fi
 
