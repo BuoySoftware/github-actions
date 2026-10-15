@@ -156,6 +156,22 @@ for syntax in "docker/dockerfile:1" "docker/dockerfile:1.4" "docker.io/docker/do
   expect_field "syntax=$syntax still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
 done
 
+printf '\357\273\277# syntax=docker/dockerfile:1.3\n' | cat - "$TMP/both" > "$TMP/syntax"
+out="$(run "$TMP/syntax" "" "")"
+expect_field "a syntax line after a byte order mark still counts" base_name "" "$out"
+
+out="$(run "$TMP/both" "" "" "--build-arg BUILDKIT_SYNTAX=docker/dockerfile:1.3")"
+expect_field "BUILDKIT_SYNTAX in build_args leaves the base empty" base_name "" "$out"
+expect_warning "BUILDKIT_SYNTAX in build_args warns" "older than 1.4"
+
+out="$(run "$TMP/both" "" "" "   ")"
+expect_field "whitespace-only build_args still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
+
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE=registry.example/other:latest\nARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE\n' > "$TMP/redeclared"
+out="$(run "$TMP/redeclared" "" "")"
+expect_field "the last ARG default before FROM wins" base_name registry.example/base:latest "$out"
+
 out="$(run "$TMP/both" "" "")"
 expect_field "the ref FROM sees is emitted" base_ref registry.example/base:latest "$out"
 

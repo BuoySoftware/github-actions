@@ -20,9 +20,9 @@ arg_default() {
       sub("[[:space:]]+$", "")
       sub("^" quotes, "")
       sub(quotes "$", "")
-      print
-      exit
+      value = $0
     }
+    END { if (value != "") print value }
   ' "$file"
 }
 
@@ -42,7 +42,8 @@ from_usage() {
 }
 
 syntax_directive() {
-  awk '
+  awk -v bom="$(printf '\357\273\277')" '
+    NR == 1 { sub("^" bom, "") }
     /^[[:space:]]*$/ { next }
     !/^#/ { exit }
     tolower($0) ~ /^#[[:space:]]*syntax[[:space:]]*=/ {
@@ -78,7 +79,7 @@ frontend_supports_contexts() {
 # BUILD_ARGS reaches docker build word-split, so it is read as words here.
 build_args_select_file() {
   local word words
-  [ -n "$1" ] || return 1
+  [[ "$1" == *[![:space:]]* ]] || return 1
   read -ra words <<<"$1"
   for word in "${words[@]}"; do
     case $word in
@@ -90,7 +91,7 @@ build_args_select_file() {
 
 build_args_set() {
   local arg=$1 word words
-  [ -n "$2" ] || return 1
+  [[ "$2" == *[![:space:]]* ]] || return 1
   read -ra words <<<"$2"
   for word in "${words[@]}"; do
     case $word in
@@ -160,8 +161,8 @@ resolve_base_images() {
     empty_pair builder
     return
   fi
-  if ! frontend_supports_contexts "$dockerfile"; then
-    echo "::warning::The syntax line in ${dockerfile} names a Dockerfile frontend older than 1.4 or not docker/dockerfile, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
+  if build_args_set BUILDKIT_SYNTAX "$build_args" || ! frontend_supports_contexts "$dockerfile"; then
+    echo "::warning::build_args or the syntax line in ${dockerfile} picks a Dockerfile frontend that may be older than 1.4, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
     empty_pair base
     empty_pair builder
     return
