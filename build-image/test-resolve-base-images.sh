@@ -164,6 +164,15 @@ out="$(run "$TMP/both" "" "" "--build-arg BUILDKIT_SYNTAX=docker/dockerfile:1.3"
 expect_field "BUILDKIT_SYNTAX in build_args leaves the base empty" base_name "" "$out"
 expect_warning "BUILDKIT_SYNTAX in build_args warns" "older than 1.4"
 
+out="$(run "$TMP/both" "" "" $'--build-arg TOKEN=x\n--build-arg BASE_IMAGE=registry.example/base:candidate')"
+expect_field "BASE_IMAGE on a later line of build_args leaves the base empty" base_name "" "$out"
+
+out="$(run "$TMP/both" "" "" $'--build-arg TOKEN=x\n-f docker/prod.Dockerfile')"
+expect_field "-f on a later line of build_args leaves the base empty" base_name "" "$out"
+
+out="$(run "$TMP/both" "" "" $'--build-arg TOKEN=x\n--build-arg BUILDKIT_SYNTAX=docker/dockerfile:1.2')"
+expect_field "BUILDKIT_SYNTAX on a later line of build_args leaves the base empty" base_name "" "$out"
+
 out="$(run "$TMP/both" "" "" "   ")"
 expect_field "whitespace-only build_args still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
 

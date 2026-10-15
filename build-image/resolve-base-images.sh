@@ -80,7 +80,7 @@ frontend_supports_contexts() {
 build_args_select_file() {
   local word words
   [[ "$1" == *[![:space:]]* ]] || return 1
-  read -ra words <<<"$1"
+  read -r -d "" -a words <<<"$1" || true
   for word in "${words[@]}"; do
     case $word in
       -f | -f?* | --file | --file=*) return 0 ;;
@@ -92,7 +92,7 @@ build_args_select_file() {
 build_args_set() {
   local arg=$1 word words
   [[ "$2" == *[![:space:]]* ]] || return 1
-  read -ra words <<<"$2"
+  read -r -d "" -a words <<<"$2" || true
   for word in "${words[@]}"; do
     case $word in
       "$arg" | "$arg="* | "--build-arg=$arg" | "--build-arg=$arg="*) return 0 ;;
