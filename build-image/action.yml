@@ -180,8 +180,10 @@ runs:
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
+        BASE_REF: ${{ steps.base-images.outputs.base_ref }}
         BASE_NAME: ${{ steps.base-images.outputs.base_name }}
         BASE_DIGEST: ${{ steps.base-images.outputs.base_digest }}
+        BUILDER_REF: ${{ steps.base-images.outputs.builder_ref }}
         BUILDER_NAME: ${{ steps.base-images.outputs.builder_name }}
         BUILDER_DIGEST: ${{ steps.base-images.outputs.builder_digest }}
         BASE_IMAGE: ${{ inputs.base_image }}

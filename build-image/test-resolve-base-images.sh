@@ -142,6 +142,23 @@ expect_field "FROM --platform=... \${BASE_IMAGE} AS app resolves" base_digest "$
 out="$(run "$TMP/unused" "" "")"
 expect_field "an ARG no FROM uses leaves the base empty" base_name "" "$out"
 
+for syntax in "docker/dockerfile:1.3" "docker/dockerfile:1.2.1" "docker/dockerfile:1.3-labs" "example/frontend:2"; do
+  printf '# syntax=%s\n' "$syntax" | cat - "$TMP/both" > "$TMP/syntax"
+  out="$(run "$TMP/syntax" "" "")"
+  expect_field "syntax=$syntax leaves the base empty" base_name "" "$out"
+  expect_field "syntax=$syntax leaves the builder empty" builder_name "" "$out"
+  expect_warning "syntax=$syntax warns" "older than 1.4"
+done
+
+for syntax in "docker/dockerfile:1" "docker/dockerfile:1.4" "docker.io/docker/dockerfile:1.7-labs" "docker/dockerfile:1.10@$FAKE_BASE_DIGEST"; do
+  printf '\n#  syntax = %s\n' "$syntax" | cat - "$TMP/both" > "$TMP/syntax"
+  out="$(run "$TMP/syntax" "" "")"
+  expect_field "syntax=$syntax still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
+done
+
+out="$(run "$TMP/both" "" "")"
+expect_field "the ref FROM sees is emitted" base_ref registry.example/base:latest "$out"
+
 expect_args() {
   local desc=$1 want=$2 got
   got="$(base_build_args)"
@@ -152,26 +169,32 @@ expect_args() {
   fi
 }
 
-BASE_NAME=registry.example/base:latest BASE_DIGEST=$FAKE_BASE_DIGEST \
-BUILDER_NAME=registry.example/builder:latest BUILDER_DIGEST=$FAKE_BUILDER_DIGEST \
+BASE_REF=registry.example/base:latest BASE_NAME=registry.example/base:latest BASE_DIGEST=$FAKE_BASE_DIGEST \
+BUILDER_REF=registry.example/builder:latest BUILDER_NAME=registry.example/builder:latest BUILDER_DIGEST=$FAKE_BUILDER_DIGEST \
 BASE_IMAGE="" BUILDER_IMAGE="" \
   expect_args "resolved defaults are pinned by build context, not by ARG, and labelled" \
   " --build-context registry.example/base:latest=docker-image://registry.example/base:latest@$FAKE_BASE_DIGEST --label org.opencontainers.image.base.name=registry.example/base:latest --label org.opencontainers.image.base.digest=$FAKE_BASE_DIGEST --build-context registry.example/builder:latest=docker-image://registry.example/builder:latest@$FAKE_BUILDER_DIGEST --label com.buoysoftware.image.builder.name=registry.example/builder:latest --label com.buoysoftware.image.builder.digest=$FAKE_BUILDER_DIGEST"
 
-BASE_NAME=registry.example/base:candidate BASE_DIGEST=$CANDIDATE_DIGEST \
-BUILDER_NAME="" BUILDER_DIGEST="" \
+BASE_REF=registry.example/base:candidate BASE_NAME=registry.example/base:candidate BASE_DIGEST=$CANDIDATE_DIGEST \
+BUILDER_REF="" BUILDER_NAME="" BUILDER_DIGEST="" \
 BASE_IMAGE=registry.example/base:candidate BUILDER_IMAGE="" \
   expect_args "a resolved override passes the ARG as written and pins it by build context" \
   " --build-arg BASE_IMAGE=registry.example/base:candidate --build-context registry.example/base:candidate=docker-image://registry.example/base:candidate@$CANDIDATE_DIGEST --label org.opencontainers.image.base.name=registry.example/base:candidate --label org.opencontainers.image.base.digest=$CANDIDATE_DIGEST"
 
-BASE_NAME="" BASE_DIGEST="" BUILDER_NAME="" BUILDER_DIGEST="" \
+BASE_REF="" BASE_NAME="" BASE_DIGEST="" BUILDER_REF="" BUILDER_NAME="" BUILDER_DIGEST="" \
 BASE_IMAGE=registry.example/base:candidate BUILDER_IMAGE="" \
   expect_args "an unresolved override still reaches the build, unlabelled" \
   " --build-arg BASE_IMAGE=registry.example/base:candidate"
 
-BASE_NAME="" BASE_DIGEST="" BUILDER_NAME="" BUILDER_DIGEST="" \
+BASE_REF="" BASE_NAME="" BASE_DIGEST="" BUILDER_REF="" BUILDER_NAME="" BUILDER_DIGEST="" \
 BASE_IMAGE="" BUILDER_IMAGE="" \
   expect_args "nothing resolved and no override adds no arguments" ""
+
+BASE_REF="registry.example/base@$CANDIDATE_DIGEST" BASE_NAME=registry.example/base BASE_DIGEST=$CANDIDATE_DIGEST \
+BUILDER_REF="" BUILDER_NAME="" BUILDER_DIGEST="" \
+BASE_IMAGE="registry.example/base@$CANDIDATE_DIGEST" BUILDER_IMAGE="" \
+  expect_args "a ref that already carries a digest gets no build context" \
+  " --build-arg BASE_IMAGE=registry.example/base@$CANDIDATE_DIGEST --label org.opencontainers.image.base.name=registry.example/base --label org.opencontainers.image.base.digest=$CANDIDATE_DIGEST"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

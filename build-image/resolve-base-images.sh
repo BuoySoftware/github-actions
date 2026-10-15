@@ -4,8 +4,8 @@
 # build-image/test-resolve-base-images.sh.
 #
 # Inputs (environment): BASE_IMAGE BUILDER_IMAGE BUILD_ARGS DOCKERFILE
-# Emits KEY=value lines on stdout: base_name, base_digest, builder_name,
-# builder_digest. A pair stays empty when the action cannot tell which image
+# Emits KEY=value lines on stdout: base_ref, base_name, base_digest,
+# builder_ref, builder_name, builder_digest. A pair stays empty when the action cannot tell which image
 # the build will use or cannot read its digest; a ::warning:: on stderr says
 # which.
 
@@ -41,9 +41,44 @@ from_usage() {
   ' "$file"
 }
 
+syntax_directive() {
+  awk '
+    /^[[:space:]]*$/ { next }
+    !/^#/ { exit }
+    tolower($0) ~ /^#[[:space:]]*syntax[[:space:]]*=/ {
+      sub(/^#[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]+$/, ""); print; exit
+    }
+  ' "$1"
+}
+
+# Named build contexts need Dockerfile frontend 1.4 or later; an older
+# pinned frontend fails the whole build.
+frontend_supports_contexts() {
+  local syntax major minor
+  syntax="$(syntax_directive "$1")"
+  syntax=${syntax%%@*}
+  [ -z "$syntax" ] && return 0
+  case $syntax in
+    docker/dockerfile:* | docker.io/docker/dockerfile:*) ;;
+    *) return 1 ;;
+  esac
+  syntax=${syntax##*:}
+  syntax=${syntax%%-*}
+  major=${syntax%%.*}
+  minor=${syntax#"$major"}
+  minor=${minor#.}
+  minor=${minor%%.*}
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  [ "$major" -gt 1 ] && return 0
+  [ "$major" -eq 1 ] || return 1
+  [ -z "$minor" ] && return 0
+  [[ "$minor" =~ ^[0-9]+$ ]] && [ "$minor" -ge 4 ]
+}
+
 # BUILD_ARGS reaches docker build word-split, so it is read as words here.
 build_args_select_file() {
   local word words
+  [ -n "$1" ] || return 1
   read -ra words <<<"$1"
   for word in "${words[@]}"; do
     case $word in
@@ -55,6 +90,7 @@ build_args_select_file() {
 
 build_args_set() {
   local arg=$1 word words
+  [ -n "$2" ] || return 1
   read -ra words <<<"$2"
   for word in "${words[@]}"; do
     case $word in
@@ -69,7 +105,7 @@ resolve_digest() {
 }
 
 empty_pair() {
-  printf '%s_name=\n%s_digest=\n' "$1" "$1"
+  printf '%s_ref=\n%s_name=\n%s_digest=\n' "$1" "$1" "$1"
 }
 
 resolve_one() {
@@ -113,13 +149,19 @@ resolve_one() {
     return
   fi
 
-  printf '%s_name=%s\n%s_digest=%s\n' "$key" "$name" "$key" "$digest"
+  printf '%s_ref=%s\n%s_name=%s\n%s_digest=%s\n' "$key" "$ref" "$key" "$name" "$key" "$digest"
 }
 
 resolve_base_images() {
   local dockerfile=${DOCKERFILE:-Dockerfile} build_args=${BUILD_ARGS:-}
   if build_args_select_file "$build_args"; then
     echo "::warning::build_args selects the Dockerfile, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
+    empty_pair base
+    empty_pair builder
+    return
+  fi
+  if ! frontend_supports_contexts "$dockerfile"; then
+    echo "::warning::The syntax line in ${dockerfile} names a Dockerfile frontend older than 1.4 or not docker/dockerfile, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
     empty_pair base
     empty_pair builder
     return
@@ -131,21 +173,23 @@ resolve_base_images() {
 # The pin goes through a named build context, not the ARG, so every use of
 # the ARG inside the Dockerfile still sees the reference as written.
 pin_args() {
-  local arg=$1 name=$2 digest=$3 input=$4 label_prefix=$5
+  local arg=$1 ref=$2 name=$3 digest=$4 input=$5 label_prefix=$6
   if [ -n "$input" ]; then
     printf ' --build-arg %s=%s' "$arg" "$input"
   fi
   if [ -n "$digest" ]; then
-    printf ' --build-context %s=docker-image://%s@%s' "$name" "$name" "$digest"
+    if [[ -n "$ref" && "$ref" != *@* ]]; then
+      printf ' --build-context %s=docker-image://%s@%s' "$ref" "$ref" "$digest"
+    fi
     printf ' --label %s.name=%s --label %s.digest=%s' "$label_prefix" "$name" "$label_prefix" "$digest"
   fi
 }
 
-# Inputs (environment): BASE_NAME BASE_DIGEST BASE_IMAGE BUILDER_NAME
-#   BUILDER_DIGEST BUILDER_IMAGE. Emits the docker build arguments.
+# Inputs (environment): BASE_REF BASE_NAME BASE_DIGEST BASE_IMAGE BUILDER_REF
+#   BUILDER_NAME BUILDER_DIGEST BUILDER_IMAGE. Emits the docker build arguments.
 base_build_args() {
-  pin_args BASE_IMAGE "${BASE_NAME:-}" "${BASE_DIGEST:-}" "${BASE_IMAGE:-}" org.opencontainers.image.base
-  pin_args BUILDER_IMAGE "${BUILDER_NAME:-}" "${BUILDER_DIGEST:-}" "${BUILDER_IMAGE:-}" com.buoysoftware.image.builder
+  pin_args BASE_IMAGE "${BASE_REF:-}" "${BASE_NAME:-}" "${BASE_DIGEST:-}" "${BASE_IMAGE:-}" org.opencontainers.image.base
+  pin_args BUILDER_IMAGE "${BUILDER_REF:-}" "${BUILDER_NAME:-}" "${BUILDER_DIGEST:-}" "${BUILDER_IMAGE:-}" com.buoysoftware.image.builder
 }
 
 if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
