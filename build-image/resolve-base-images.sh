@@ -66,6 +66,26 @@ resolve_base_images() {
   resolve_one builder BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile"
 }
 
+pin_args() {
+  local arg=$1 name=$2 digest=$3 input=$4 label_prefix=$5
+  if [ -n "$digest" ]; then
+    printf ' --build-arg %s=%s@%s' "$arg" "$name" "$digest"
+    printf ' --label %s.name=%s --label %s.digest=%s' "$label_prefix" "$name" "$label_prefix" "$digest"
+  elif [ -n "$input" ]; then
+    printf ' --build-arg %s=%s' "$arg" "$input"
+  fi
+}
+
+# Inputs (environment): BASE_NAME BASE_DIGEST BASE_IMAGE BUILDER_NAME
+#   BUILDER_DIGEST BUILDER_IMAGE. Emits the docker build arguments.
+base_build_args() {
+  pin_args BASE_IMAGE "${BASE_NAME:-}" "${BASE_DIGEST:-}" "${BASE_IMAGE:-}" org.opencontainers.image.base
+  pin_args BUILDER_IMAGE "${BUILDER_NAME:-}" "${BUILDER_DIGEST:-}" "${BUILDER_IMAGE:-}" com.buoysoftware.image.builder
+}
+
 if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
-  resolve_base_images
+  case ${1:-} in
+    build-args) base_build_args ;;
+    *) resolve_base_images ;;
+  esac
 fi

@@ -203,21 +203,7 @@ runs:
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
         fi
 
-        BASE_ARGS=""
-        if [ -n "$BASE_DIGEST" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_NAME@$BASE_DIGEST"
-          BASE_ARGS="$BASE_ARGS --label org.opencontainers.image.base.name=$BASE_NAME"
-          BASE_ARGS="$BASE_ARGS --label org.opencontainers.image.base.digest=$BASE_DIGEST"
-        elif [ -n "$BASE_IMAGE" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_IMAGE"
-        fi
-        if [ -n "$BUILDER_DIGEST" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_NAME@$BUILDER_DIGEST"
-          BASE_ARGS="$BASE_ARGS --label com.buoysoftware.image.builder.name=$BUILDER_NAME"
-          BASE_ARGS="$BASE_ARGS --label com.buoysoftware.image.builder.digest=$BUILDER_DIGEST"
-        elif [ -n "$BUILDER_IMAGE" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_IMAGE"
-        fi
+        BASE_ARGS="$("${{ github.action_path }}/resolve-base-images.sh" build-args)"
 
         docker build . $TAGS $BUILD_ARGS $BASE_ARGS --build-arg CURR_GIT_SHA="$SHA" --label org.opencontainers.image.revision="$COMMIT" --label org.opencontainers.image.source="$REPOSITORY_URL"
         docker push --all-tags $REGISTRY/$REPOSITORY
