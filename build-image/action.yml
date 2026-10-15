@@ -160,6 +160,7 @@ runs:
       env:
         BASE_IMAGE: ${{ inputs.base_image }}
         BUILDER_IMAGE: ${{ inputs.builder_image }}
+        BUILD_ARGS: ${{ inputs.build_args }}
       run: |
         resolved="$("${{ github.action_path }}/resolve-base-images.sh")"
         echo "$resolved" >> "$GITHUB_OUTPUT"

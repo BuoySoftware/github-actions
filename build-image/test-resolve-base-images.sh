@@ -42,10 +42,19 @@ printf 'FROM scratch\nARG BASE_IMAGE=registry.example/base:latest\n' > "$TMP/aft
 printf 'ARG REGISTRY=registry.example\nARG BASE_IMAGE=${REGISTRY}/base:latest\nFROM $BASE_IMAGE\n' > "$TMP/variable"
 # shellcheck disable=SC2016
 printf 'ARG BASE_IMAGE=registry.example/missing:latest\nFROM $BASE_IMAGE\n' > "$TMP/missing"
+# shellcheck disable=SC2016
+printf 'ARG BUILDER_IMAGE=registry.example/builder:latest\nARG BASE_IMAGE=registry.example/base\nFROM $BUILDER_IMAGE AS builder\nFROM ${BASE_IMAGE}:latest\n' > "$TMP/longer-tag"
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE=registry.example/base\nFROM $BASE_IMAGE-slim\n' > "$TMP/longer-suffix"
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE=registry.example/base:latest\nARG BASE_IMAGE_TAG=1\nFROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS app\nRUN echo $BASE_IMAGE_TAG\n' > "$TMP/platform"
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE=registry.example/base:latest\nFROM registry.example/base:latest\n' > "$TMP/unused"
 
-# run <dockerfile> <base_input> <builder_input>
+# run <dockerfile> <base_input> <builder_input> [build_args]
 run() {
-  DOCKERFILE="$1" BASE_IMAGE="$2" BUILDER_IMAGE="$3" resolve_base_images 2>"$TMP/stderr"
+  DOCKERFILE="$1" BASE_IMAGE="$2" BUILDER_IMAGE="$3" BUILD_ARGS="${4:-}" \
+    resolve_base_images 2>"$TMP/stderr"
 }
 
 expect_field() {
@@ -100,6 +109,39 @@ out="$(run "$TMP/missing" "" "")"
 expect_field "an unreadable digest leaves the pair empty" base_name "" "$out"
 expect_warning "an unreadable digest warns" "Could not read the digest"
 
+out="$(run "$TMP/both" "" "" "--build-arg TOKEN=x --build-arg BASE_IMAGE=registry.example/base:candidate")"
+expect_field "BASE_IMAGE set in build_args leaves the base empty" base_name "" "$out"
+expect_warning "BASE_IMAGE set in build_args warns" "build_args sets BASE_IMAGE"
+expect_field "BASE_IMAGE set in build_args still resolves the builder" builder_digest "$FAKE_BUILDER_DIGEST" "$out"
+
+out="$(run "$TMP/both" "" "" "--build-arg=BUILDER_IMAGE=registry.example/builder:candidate")"
+expect_field "--build-arg=BUILDER_IMAGE= leaves the builder empty" builder_name "" "$out"
+expect_field "--build-arg=BUILDER_IMAGE= still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
+
+out="$(run "$TMP/both" "" "" "--build-arg TOKEN=x")"
+expect_field "other build_args do not stop the base resolving" base_digest "$FAKE_BASE_DIGEST" "$out"
+
+for file_flag in "-f docker/prod.Dockerfile" "--file docker/prod.Dockerfile" "--file=docker/prod.Dockerfile" "-fdocker/prod.Dockerfile"; do
+  out="$(run "$TMP/both" "" "" "--build-arg TOKEN=x $file_flag")"
+  expect_field "build_args '$file_flag' leaves the base empty" base_name "" "$out"
+  expect_field "build_args '$file_flag' leaves the builder empty" builder_name "" "$out"
+  expect_warning "build_args '$file_flag' warns" "build_args selects the Dockerfile"
+done
+
+out="$(run "$TMP/longer-tag" "" "")"
+expect_field "FROM \${BASE_IMAGE}:tag leaves the base empty" base_name "" "$out"
+expect_warning "FROM \${BASE_IMAGE}:tag warns" "whole image reference"
+expect_field "FROM \${BASE_IMAGE}:tag still resolves the builder" builder_digest "$FAKE_BUILDER_DIGEST" "$out"
+
+out="$(run "$TMP/longer-suffix" "" "")"
+expect_field "FROM \$BASE_IMAGE-slim leaves the base empty" base_name "" "$out"
+
+out="$(run "$TMP/platform" "" "")"
+expect_field "FROM --platform=... \${BASE_IMAGE} AS app resolves" base_digest "$FAKE_BASE_DIGEST" "$out"
+
+out="$(run "$TMP/unused" "" "")"
+expect_field "an ARG no FROM uses leaves the base empty" base_name "" "$out"
+
 expect_args() {
   local desc=$1 want=$2 got
   got="$(base_build_args)"
@@ -113,8 +155,14 @@ expect_args() {
 BASE_NAME=registry.example/base:latest BASE_DIGEST=$FAKE_BASE_DIGEST \
 BUILDER_NAME=registry.example/builder:latest BUILDER_DIGEST=$FAKE_BUILDER_DIGEST \
 BASE_IMAGE="" BUILDER_IMAGE="" \
-  expect_args "resolved images are pinned by digest and labelled" \
-  " --build-arg BASE_IMAGE=registry.example/base:latest@$FAKE_BASE_DIGEST --label org.opencontainers.image.base.name=registry.example/base:latest --label org.opencontainers.image.base.digest=$FAKE_BASE_DIGEST --build-arg BUILDER_IMAGE=registry.example/builder:latest@$FAKE_BUILDER_DIGEST --label com.buoysoftware.image.builder.name=registry.example/builder:latest --label com.buoysoftware.image.builder.digest=$FAKE_BUILDER_DIGEST"
+  expect_args "resolved defaults are pinned by build context, not by ARG, and labelled" \
+  " --build-context registry.example/base:latest=docker-image://registry.example/base:latest@$FAKE_BASE_DIGEST --label org.opencontainers.image.base.name=registry.example/base:latest --label org.opencontainers.image.base.digest=$FAKE_BASE_DIGEST --build-context registry.example/builder:latest=docker-image://registry.example/builder:latest@$FAKE_BUILDER_DIGEST --label com.buoysoftware.image.builder.name=registry.example/builder:latest --label com.buoysoftware.image.builder.digest=$FAKE_BUILDER_DIGEST"
+
+BASE_NAME=registry.example/base:candidate BASE_DIGEST=$CANDIDATE_DIGEST \
+BUILDER_NAME="" BUILDER_DIGEST="" \
+BASE_IMAGE=registry.example/base:candidate BUILDER_IMAGE="" \
+  expect_args "a resolved override passes the ARG as written and pins it by build context" \
+  " --build-arg BASE_IMAGE=registry.example/base:candidate --build-context registry.example/base:candidate=docker-image://registry.example/base:candidate@$CANDIDATE_DIGEST --label org.opencontainers.image.base.name=registry.example/base:candidate --label org.opencontainers.image.base.digest=$CANDIDATE_DIGEST"
 
 BASE_NAME="" BASE_DIGEST="" BUILDER_NAME="" BUILDER_DIGEST="" \
 BASE_IMAGE=registry.example/base:candidate BUILDER_IMAGE="" \
