@@ -58,13 +58,9 @@ runs:
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
       env:
         SYFT_SELECT_CATALOGERS: "-github-actions"
-        # An installed gem ships the lock files its own maintainers use, which
-        # describe their test suite rather than anything we run. Syft reads
-        # them and reports the contents as the caller's dependencies, at the
-        # versions those maintainers pinned. Keep specifications/*.gemspec:
-        # that is the only place gem licenses come from. SYFT_EXCLUDE splits
-        # on commas only, so this has to stay one line with no spaces.
-        SYFT_EXCLUDE: "./vendor/bundle/**/Gemfile.lock,./vendor/bundle/**/yarn.lock,./vendor/bundle/**/package-lock.json,./vendor/bundle/**/package.json"
+        # Never exclude specifications/*.gemspec: gem licenses come only from
+        # there. Splits on commas only, so one line with no spaces.
+        SYFT_EXCLUDE: "./vendor/bundle/**/Gemfile.lock,./vendor/bundle/**/yarn.lock,./vendor/bundle/**/package-lock.json,./vendor/bundle/**/package.json,./vendor/bundle/**/gems/**/*.gemspec"
       with:
         path: ${{ inputs.path }}
         format: spdx-json
