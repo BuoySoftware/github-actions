@@ -41,6 +41,16 @@ from_usage() {
   ' "$file"
 }
 
+final_from_uses() {
+  awk -v arg="$1" '
+    toupper($1) == "FROM" {
+      image = ""
+      for (i = 2; i <= NF; i++) if ($i !~ /^--/) { image = $i; break }
+    }
+    END { exit !(image == "$" arg || image == "${" arg "}") }
+  ' "$2"
+}
+
 syntax_directive() {
   awk -v bom="$(printf '\357\273\277')" '
     NR == 1 { sub("^" bom, "") }
@@ -58,7 +68,7 @@ frontend_supports_contexts() {
   local syntax major minor
   syntax="$(syntax_directive "$1")"
   syntax=${syntax%%@*}
-  [ -z "$syntax" ] && return 0
+  [ -z "$syntax" ] && return 1
   case $syntax in
     docker/dockerfile:* | docker.io/docker/dockerfile:*) ;;
     *) return 1 ;;
@@ -74,6 +84,21 @@ frontend_supports_contexts() {
   [ "$major" -eq 1 ] || return 1
   [ -z "$minor" ] && return 0
   [[ "$minor" =~ ^[0-9]+$ ]] && [ "$minor" -ge 4 ]
+}
+
+builder_supports_contexts() {
+  [ "${DOCKER_BUILDKIT:-}" != 0 ] &&
+    docker build --help 2>/dev/null | grep -q -- '--build-context'
+}
+
+build_args_select_target() {
+  local word words
+  [[ "$1" == *[![:space:]]* ]] || return 1
+  read -r -d "" -a words <<<"$1" || true
+  for word in "${words[@]}"; do
+    case $word in --target | --target=*) return 0 ;; esac
+  done
+  return 1
 }
 
 # BUILD_ARGS reaches docker build word-split, so it is read as words here.
@@ -136,12 +161,17 @@ resolve_one() {
     empty_pair "$key"
     return
   fi
+  if [ "$key" = base ] && ! final_from_uses "$arg" "$dockerfile"; then
+    echo "::warning::The final FROM does not directly use \$${arg}, so the build carries no base pin or labels." >&2
+    empty_pair "$key"
+    return
+  fi
 
   name=${ref%%@*}
   if [[ "$ref" == *@sha256:* ]]; then
     digest=${ref#*@}
   else
-    digest="$(${RESOLVE_DIGEST:-resolve_digest} "$ref")"
+    digest="$(resolve_digest "$ref")"
   fi
 
   if [[ "$digest" != sha256:* ]]; then
@@ -161,8 +191,20 @@ resolve_base_images() {
     empty_pair builder
     return
   fi
+  if build_args_select_target "$build_args"; then
+    echo "::warning::build_args selects a target stage, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
+    empty_pair base
+    empty_pair builder
+    return
+  fi
+  if ! builder_supports_contexts; then
+    echo "::warning::The Docker builder does not support named build contexts, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
+    empty_pair base
+    empty_pair builder
+    return
+  fi
   if build_args_set BUILDKIT_SYNTAX "$build_args" || ! frontend_supports_contexts "$dockerfile"; then
-    echo "::warning::build_args or the syntax line in ${dockerfile} picks a Dockerfile frontend that may be older than 1.4, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
+    echo "::warning::The frontend selected by build_args or ${dockerfile} is unknown or older than 1.4, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
     empty_pair base
     empty_pair builder
     return

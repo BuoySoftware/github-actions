@@ -17,7 +17,7 @@ FAKE_BASE_DIGEST=sha256:11111111111111111111111111111111111111111111111111111111
 FAKE_BUILDER_DIGEST=sha256:2222222222222222222222222222222222222222222222222222222222222222
 CANDIDATE_DIGEST=sha256:3333333333333333333333333333333333333333333333333333333333333333
 
-fake_digest() {
+resolve_digest() {
   case $1 in
     registry.example/base:latest)    printf '%s' "$FAKE_BASE_DIGEST" ;;
     registry.example/builder:latest) printf '%s' "$FAKE_BUILDER_DIGEST" ;;
@@ -25,7 +25,11 @@ fake_digest() {
     *) return 1 ;;
   esac
 }
-export RESOLVE_DIGEST=fake_digest
+
+docker() {
+  [ "$*" = "build --help" ] || return 1
+  printf '%s\n' "${DOCKER_BUILD_HELP:---build-context}"
+}
 
 TMP="$(mktemp -d)"
 trap 'test -d "$TMP" && command ''rm'' -r -- "$TMP"' EXIT
@@ -50,6 +54,13 @@ printf 'ARG BASE_IMAGE=registry.example/base\nFROM $BASE_IMAGE-slim\n' > "$TMP/l
 printf 'ARG BASE_IMAGE=registry.example/base:latest\nARG BASE_IMAGE_TAG=1\nFROM --platform=$BUILDPLATFORM ${BASE_IMAGE} AS app\nRUN echo $BASE_IMAGE_TAG\n' > "$TMP/platform"
 # shellcheck disable=SC2016
 printf 'ARG BASE_IMAGE=registry.example/base:latest\nFROM registry.example/base:latest\n' > "$TMP/unused"
+
+for fixture in "$TMP"/*; do
+  printf '# syntax=docker/dockerfile:1.4\n' | cat - "$fixture" > "$TMP/frontend"
+  mv "$TMP/frontend" "$fixture"
+done
+
+printf '# syntax=docker/dockerfile:1.4\nARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE AS deps\nFROM scratch\n' > "$TMP/intermediate-base"
 
 # run <dockerfile> <base_input> <builder_input> [build_args]
 run() {
@@ -142,6 +153,28 @@ expect_field "FROM --platform=... \${BASE_IMAGE} AS app resolves" base_digest "$
 out="$(run "$TMP/unused" "" "")"
 expect_field "an ARG no FROM uses leaves the base empty" base_name "" "$out"
 
+out="$(run "$TMP/intermediate-base" "" "")"
+expect_field "an intermediate stage is not the final image base" base_digest "" "$out"
+
+for target in '--target builder' '--target=builder'; do
+  out="$(run "$TMP/both" "" "" "$target")"
+  expect_field "a target override leaves the base unknown" base_digest "" "$out"
+  expect_field "a target override leaves the builder unknown" builder_digest "" "$out"
+done
+
+out="$(DOCKER_BUILDKIT=0 run "$TMP/both" "" "")"
+expect_field "the legacy builder adds no named contexts" base_digest "" "$out"
+
+out="$(DOCKER_BUILD_HELP='Usage: docker build' run "$TMP/both" "" "")"
+expect_field "a CLI without named contexts keeps the build unpinned" base_digest "" "$out"
+
+tail -n +2 "$TMP/both" > "$TMP/no-syntax"
+out="$(run "$TMP/no-syntax" "" "")"
+expect_field "an unknown bundled frontend keeps the build unpinned" base_digest "" "$out"
+
+out="$(RESOLVE_DIGEST=false run "$TMP/both" "" "")"
+expect_field "an unrelated environment variable cannot replace the resolver" base_digest "$FAKE_BASE_DIGEST" "$out"
+
 for syntax in "docker/dockerfile:1.3" "docker/dockerfile:1.2.1" "docker/dockerfile:1.3-labs" "example/frontend:2"; do
   printf '# syntax=%s\n' "$syntax" | cat - "$TMP/both" > "$TMP/syntax"
   out="$(run "$TMP/syntax" "" "")"
@@ -177,7 +210,7 @@ out="$(run "$TMP/both" "" "" "   ")"
 expect_field "whitespace-only build_args still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
 
 # shellcheck disable=SC2016
-printf 'ARG BASE_IMAGE=registry.example/other:latest\nARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE\n' > "$TMP/redeclared"
+printf '# syntax=docker/dockerfile:1.4\nARG BASE_IMAGE=registry.example/other:latest\nARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE\n' > "$TMP/redeclared"
 out="$(run "$TMP/redeclared" "" "")"
 expect_field "the last ARG default before FROM wins" base_name registry.example/base:latest "$out"
 
