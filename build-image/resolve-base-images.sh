@@ -135,8 +135,10 @@ empty_pair() {
 }
 
 pins_anything() {
-  local arg=$1 input=$2 dockerfile=$3
-  [ -n "${input:-$(arg_default "$arg" "$dockerfile")}" ] &&
+  local arg=$1 input=$2 dockerfile=$3 build_args=$4
+  [ -n "$input" ] && return 0
+  build_args_set "$arg" "$build_args" && return 0
+  [ -n "$(arg_default "$arg" "$dockerfile")" ] &&
     [ -n "$(from_usage "$arg" "$dockerfile")" ]
 }
 
@@ -205,8 +207,8 @@ resolve_one() {
 resolve_base_images() {
   local dockerfile=${DOCKERFILE:-Dockerfile} build_args=${BUILD_ARGS:-} problem
   if [ ! -f "$dockerfile" ] ||
-    ! { pins_anything BASE_IMAGE "${BASE_IMAGE:-}" "$dockerfile" ||
-      pins_anything BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile"; }; then
+    ! { pins_anything BASE_IMAGE "${BASE_IMAGE:-}" "$dockerfile" "$build_args" ||
+      pins_anything BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile" "$build_args"; }; then
     empty_pair base
     empty_pair builder
     return

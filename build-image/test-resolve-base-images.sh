@@ -184,6 +184,16 @@ for build_args in "" "--target app" "-f docker/prod.Dockerfile" "--build-arg BUI
   expect_no_warning "nothing to pin with build_args '$build_args' does not warn"
 done
 
+out="$(run "$TMP/none" registry.example/base:candidate "")"
+expect_field "an input no FROM uses leaves the base empty" base_name "" "$out"
+expect_warning "an input no FROM uses warns" "whole image reference"
+
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE\nFROM $BASE_IMAGE\n' > "$TMP/no-default"
+out="$(run "$TMP/no-default" "" "" "--build-arg BASE_IMAGE=registry.example/base:candidate")"
+expect_field "build_args setting an ARG with no default leaves the base empty" base_name "" "$out"
+expect_warning "build_args setting an ARG with no default warns" "build_args sets BASE_IMAGE"
+
 printf '# syntax=docker/dockerfile:1.2\n' | cat - "$TMP/none" > "$TMP/none-old-frontend"
 out="$(run "$TMP/none-old-frontend" "" "")"
 expect_no_warning "an old frontend with nothing to pin does not warn"
