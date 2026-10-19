@@ -55,12 +55,8 @@ printf 'ARG BASE_IMAGE=registry.example/base:latest\nARG BASE_IMAGE_TAG=1\nFROM 
 # shellcheck disable=SC2016
 printf 'ARG BASE_IMAGE=registry.example/base:latest\nFROM registry.example/base:latest\n' > "$TMP/unused"
 
-for fixture in "$TMP"/*; do
-  printf '# syntax=docker/dockerfile:1.4\n' | cat - "$fixture" > "$TMP/frontend"
-  mv "$TMP/frontend" "$fixture"
-done
-
-printf '# syntax=docker/dockerfile:1.4\nARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE AS deps\nFROM scratch\n' > "$TMP/intermediate-base"
+# shellcheck disable=SC2016
+printf 'ARG BASE_IMAGE=registry.example/base:latest\nFROM $BASE_IMAGE AS deps\nFROM scratch\n' > "$TMP/intermediate-base"
 
 # run <dockerfile> <base_input> <builder_input> [build_args]
 run() {
@@ -75,6 +71,15 @@ expect_field() {
     ok "$desc"
   else
     fail "$desc" "$field: want '$want', got '$got'"
+  fi
+}
+
+expect_no_warning() {
+  local desc=$1
+  if grep -q "::warning::" "$TMP/stderr"; then
+    fail "$desc" "$(cat "$TMP/stderr")"
+  else
+    ok "$desc"
   fi
 }
 
@@ -168,9 +173,32 @@ expect_field "the legacy builder adds no named contexts" base_digest "" "$out"
 out="$(DOCKER_BUILD_HELP='Usage: docker build' run "$TMP/both" "" "")"
 expect_field "a CLI without named contexts keeps the build unpinned" base_digest "" "$out"
 
-tail -n +2 "$TMP/both" > "$TMP/no-syntax"
-out="$(run "$TMP/no-syntax" "" "")"
-expect_field "an unknown bundled frontend keeps the build unpinned" base_digest "" "$out"
+out="$(run "$TMP/both" "" "")"
+expect_field "no syntax line uses the bundled frontend and pins the base" base_digest "$FAKE_BASE_DIGEST" "$out"
+expect_field "no syntax line uses the bundled frontend and pins the builder" builder_digest "$FAKE_BUILDER_DIGEST" "$out"
+expect_no_warning "no syntax line does not warn"
+
+for build_args in "" "--target app" "-f docker/prod.Dockerfile" "--build-arg BUILDKIT_SYNTAX=docker/dockerfile:1.2"; do
+  out="$(DOCKER_BUILD_HELP='Usage: docker build' run "$TMP/none" "" "" "$build_args")"
+  expect_field "nothing to pin with build_args '$build_args' leaves the base empty" base_name "" "$out"
+  expect_no_warning "nothing to pin with build_args '$build_args' does not warn"
+done
+
+printf '# syntax=docker/dockerfile:1.2\n' | cat - "$TMP/none" > "$TMP/none-old-frontend"
+out="$(run "$TMP/none-old-frontend" "" "")"
+expect_no_warning "an old frontend with nothing to pin does not warn"
+
+out="$(run "$TMP/does-not-exist" "" "")"
+expect_no_warning "a missing Dockerfile does not warn"
+
+out="$(DOCKER_BUILD_HELP='Usage: docker build' run "$TMP/both" "registry.example/base:candidate@$CANDIDATE_DIGEST" "")"
+expect_field "a ref pinned by digest keeps its labels without named contexts" base_digest "$CANDIDATE_DIGEST" "$out"
+expect_field "an unpinned builder without named contexts is left empty" builder_digest "" "$out"
+expect_warning "an unpinned builder without named contexts warns" "does not support named build contexts"
+
+printf '# syntax=docker/dockerfile:1.2\n' | cat - "$TMP/both" > "$TMP/old-frontend"
+out="$(run "$TMP/old-frontend" "registry.example/base:candidate@$CANDIDATE_DIGEST" "")"
+expect_field "a ref pinned by digest keeps its labels on an old frontend" base_digest "$CANDIDATE_DIGEST" "$out"
 
 out="$(RESOLVE_DIGEST=false run "$TMP/both" "" "")"
 expect_field "an unrelated environment variable cannot replace the resolver" base_digest "$FAKE_BASE_DIGEST" "$out"

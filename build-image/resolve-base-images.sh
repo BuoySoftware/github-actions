@@ -68,7 +68,7 @@ frontend_supports_contexts() {
   local syntax major minor
   syntax="$(syntax_directive "$1")"
   syntax=${syntax%%@*}
-  [ -z "$syntax" ] && return 1
+  [ -z "$syntax" ] && return 0
   case $syntax in
     docker/dockerfile:* | docker.io/docker/dockerfile:*) ;;
     *) return 1 ;;
@@ -134,8 +134,23 @@ empty_pair() {
   printf '%s_ref=\n%s_name=\n%s_digest=\n' "$1" "$1" "$1"
 }
 
+pins_anything() {
+  local arg=$1 input=$2 dockerfile=$3
+  [ -n "${input:-$(arg_default "$arg" "$dockerfile")}" ] &&
+    [ -n "$(from_usage "$arg" "$dockerfile")" ]
+}
+
+context_problem() {
+  local dockerfile=$1 build_args=$2
+  if ! builder_supports_contexts; then
+    echo "The Docker builder does not support named build contexts"
+  elif build_args_set BUILDKIT_SYNTAX "$build_args" || ! frontend_supports_contexts "$dockerfile"; then
+    echo "The frontend selected by build_args or ${dockerfile} is unknown or older than 1.4"
+  fi
+}
+
 resolve_one() {
-  local key=$1 arg=$2 input=$3 dockerfile=$4 build_args=$5
+  local key=$1 arg=$2 input=$3 dockerfile=$4 build_args=$5 problem=$6
   local ref name digest usage
 
   if build_args_set "$arg" "$build_args"; then
@@ -170,6 +185,10 @@ resolve_one() {
   name=${ref%%@*}
   if [[ "$ref" == *@sha256:* ]]; then
     digest=${ref#*@}
+  elif [ -n "$problem" ]; then
+    echo "::warning::${problem}, so ${ref} is not pinned to a digest and the image carries no ${key} labels." >&2
+    empty_pair "$key"
+    return
   else
     digest="$(resolve_digest "$ref")"
   fi
@@ -184,7 +203,14 @@ resolve_one() {
 }
 
 resolve_base_images() {
-  local dockerfile=${DOCKERFILE:-Dockerfile} build_args=${BUILD_ARGS:-}
+  local dockerfile=${DOCKERFILE:-Dockerfile} build_args=${BUILD_ARGS:-} problem
+  if [ ! -f "$dockerfile" ] ||
+    ! { pins_anything BASE_IMAGE "${BASE_IMAGE:-}" "$dockerfile" ||
+      pins_anything BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile"; }; then
+    empty_pair base
+    empty_pair builder
+    return
+  fi
   if build_args_select_file "$build_args"; then
     echo "::warning::build_args selects the Dockerfile, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
     empty_pair base
@@ -197,20 +223,9 @@ resolve_base_images() {
     empty_pair builder
     return
   fi
-  if ! builder_supports_contexts; then
-    echo "::warning::The Docker builder does not support named build contexts, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
-    empty_pair base
-    empty_pair builder
-    return
-  fi
-  if build_args_set BUILDKIT_SYNTAX "$build_args" || ! frontend_supports_contexts "$dockerfile"; then
-    echo "::warning::The frontend selected by build_args or ${dockerfile} is unknown or older than 1.4, so the build is not pinned to a digest and the image carries no base or builder labels." >&2
-    empty_pair base
-    empty_pair builder
-    return
-  fi
-  resolve_one base BASE_IMAGE "${BASE_IMAGE:-}" "$dockerfile" "$build_args"
-  resolve_one builder BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile" "$build_args"
+  problem="$(context_problem "$dockerfile" "$build_args")"
+  resolve_one base BASE_IMAGE "${BASE_IMAGE:-}" "$dockerfile" "$build_args" "$problem"
+  resolve_one builder BUILDER_IMAGE "${BUILDER_IMAGE:-}" "$dockerfile" "$build_args" "$problem"
 }
 
 # The pin goes through a named build context, not the ARG, so every use of
