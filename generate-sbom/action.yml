@@ -31,6 +31,10 @@ inputs:
     description: "File name the SBOM is attached to the release under"
     default: "sbom.spdx.json"
     required: false
+  image:
+    description: "Container image to scan. Takes precedence over path. The caller must already be logged in to the registry"
+    default: ""
+    required: false
   path:
     description: "Directory scanned for dependencies"
     default: "."
@@ -56,12 +60,16 @@ runs:
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
       uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      # Both env vars below apply to a directory scan only. Syft ignores
+      # relative excludes on an image and the deselected catalogers are
+      # directory-tagged, so an image scan silently runs without them.
       env:
         SYFT_SELECT_CATALOGERS: "-github-actions"
         # Never exclude specifications/*.gemspec: gem licenses come only from
         # there. Splits on commas only, so one line with no spaces.
         SYFT_EXCLUDE: "./vendor/bundle/**/Gemfile.lock,./vendor/bundle/**/yarn.lock,./vendor/bundle/**/package-lock.json,./vendor/bundle/**/package.json,./vendor/bundle/**/gems/**/*.gemspec"
       with:
+        image: ${{ inputs.image }}
         path: ${{ inputs.path }}
         format: spdx-json
         output-file: ${{ runner.temp }}/${{ inputs.asset_name }}
