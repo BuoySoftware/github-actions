@@ -65,15 +65,18 @@ syntax_directive() {
 # Named build contexts need Dockerfile frontend 1.4 or later; an older
 # pinned frontend fails the whole build.
 frontend_supports_contexts() {
-  local syntax major minor
+  local syntax directive major minor
   syntax="$(syntax_directive "$1")"
+  directive=$syntax
   syntax=${syntax%%@*}
   [ -z "$syntax" ] && return 0
   case $syntax in
+    docker/dockerfile | docker.io/docker/dockerfile) [ "$syntax" = "$directive" ]; return ;;
     docker/dockerfile:* | docker.io/docker/dockerfile:*) ;;
     *) return 1 ;;
   esac
   syntax=${syntax##*:}
+  case $syntax in latest | labs) return 0 ;; esac
   syntax=${syntax%%-*}
   major=${syntax%%.*}
   minor=${syntax#"$major"}

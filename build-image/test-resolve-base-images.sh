@@ -213,7 +213,7 @@ expect_field "a ref pinned by digest keeps its labels on an old frontend" base_d
 out="$(RESOLVE_DIGEST=false run "$TMP/both" "" "")"
 expect_field "an unrelated environment variable cannot replace the resolver" base_digest "$FAKE_BASE_DIGEST" "$out"
 
-for syntax in "docker/dockerfile:1.3" "docker/dockerfile:1.2.1" "docker/dockerfile:1.3-labs" "example/frontend:2"; do
+for syntax in "docker/dockerfile:1.3" "docker/dockerfile:1.2.1" "docker/dockerfile:1.3-labs" "example/frontend:2" "docker/dockerfile@$FAKE_BASE_DIGEST"; do
   printf '# syntax=%s\n' "$syntax" | cat - "$TMP/both" > "$TMP/syntax"
   out="$(run "$TMP/syntax" "" "")"
   expect_field "syntax=$syntax leaves the base empty" base_name "" "$out"
@@ -221,7 +221,8 @@ for syntax in "docker/dockerfile:1.3" "docker/dockerfile:1.2.1" "docker/dockerfi
   expect_warning "syntax=$syntax warns" "older than 1.4"
 done
 
-for syntax in "docker/dockerfile:1" "docker/dockerfile:1.4" "docker.io/docker/dockerfile:1.7-labs" "docker/dockerfile:1.10@$FAKE_BASE_DIGEST"; do
+for syntax in "docker/dockerfile:1" "docker/dockerfile:1.4" "docker.io/docker/dockerfile:1.7-labs" "docker/dockerfile:1.10@$FAKE_BASE_DIGEST" \
+  "docker/dockerfile" "docker.io/docker/dockerfile" "docker/dockerfile:labs" "docker/dockerfile:latest"; do
   printf '\n#  syntax = %s\n' "$syntax" | cat - "$TMP/both" > "$TMP/syntax"
   out="$(run "$TMP/syntax" "" "")"
   expect_field "syntax=$syntax still resolves the base" base_digest "$FAKE_BASE_DIGEST" "$out"
