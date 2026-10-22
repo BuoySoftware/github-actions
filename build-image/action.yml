@@ -92,18 +92,12 @@ runs:
         SHORT: ${{ steps.current-git-details.outputs.short }}
         LONG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
-        BASE_IMAGE: ${{ inputs.base_image }}
-        BUILDER_IMAGE: ${{ inputs.builder_image }}
       run: |
         {
           echo "## Tags"
           echo "Short SHA: $SHORT"
           echo "Long SHA: $LONG"
           echo "Ref Tag: $REF_TAG"
-          if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
-            echo "Base image: ${BASE_IMAGE:-(default)}"
-            echo "Builder image: ${BUILDER_IMAGE:-(default)}"
-          fi
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Amazon ECR Credentials
@@ -167,12 +161,12 @@ runs:
         field() {
           local value
           value="$(printf '%s\n' "$resolved" | sed -n "s/^$1=//p")"
-          printf '%s' "${value:-not resolved}"
+          printf '%s' "${value:-${2:-not resolved}}"
         }
         {
-          echo "Base image: $(field base_name)${BASE_IMAGE:+ (override)}"
+          echo "Base image: $(field base_name "$BASE_IMAGE")${BASE_IMAGE:+ (override)}"
           echo "Base digest: $(field base_digest)"
-          echo "Builder image: $(field builder_name)${BUILDER_IMAGE:+ (override)}"
+          echo "Builder image: $(field builder_name "$BUILDER_IMAGE")${BUILDER_IMAGE:+ (override)}"
           echo "Builder digest: $(field builder_digest)"
         } >> "$GITHUB_STEP_SUMMARY"
 

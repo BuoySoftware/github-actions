@@ -294,5 +294,14 @@ BASE_IMAGE="registry.example/base@$CANDIDATE_DIGEST" BUILDER_IMAGE="" \
   expect_args "a ref that already carries a digest gets no build context" \
   " --build-arg BASE_IMAGE=registry.example/base@$CANDIDATE_DIGEST --label org.opencontainers.image.base.name=registry.example/base --label org.opencontainers.image.base.digest=$CANDIDATE_DIGEST"
 
+for line in "Base image:" "Builder image:"; do
+  count="$(grep -c "echo \"$line" "$DIR/action.yml")"
+  if [ "$count" -eq 1 ]; then
+    ok "action.yml writes '$line' to the step summary once"
+  else
+    fail "action.yml writes '$line' to the step summary once" "found $count"
+  fi
+done
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
