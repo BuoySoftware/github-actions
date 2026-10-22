@@ -92,18 +92,12 @@ runs:
         SHORT: ${{ steps.current-git-details.outputs.short }}
         LONG: ${{ steps.current-git-details.outputs.long }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
-        BASE_IMAGE: ${{ inputs.base_image }}
-        BUILDER_IMAGE: ${{ inputs.builder_image }}
       run: |
         {
           echo "## Tags"
           echo "Short SHA: $SHORT"
           echo "Long SHA: $LONG"
           echo "Ref Tag: $REF_TAG"
-          if [ -n "$BASE_IMAGE" ] || [ -n "$BUILDER_IMAGE" ]; then
-            echo "Base image: ${BASE_IMAGE:-(default)}"
-            echo "Builder image: ${BUILDER_IMAGE:-(default)}"
-          fi
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Configure Amazon ECR Credentials
@@ -121,8 +115,6 @@ runs:
       id: check-image-exists
       shell: bash
       env:
-        BASE_IMAGE: ${{ inputs.base_image }}
-        BUILDER_IMAGE: ${{ inputs.builder_image }}
         RC_TAG: ${{ inputs.release_candidate_tag && format('tag-{0}', inputs.release_candidate_tag) || '' }}
         REF_TAG: ${{ steps.current-git-details.outputs.tag }}
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -131,8 +123,6 @@ runs:
         SHORT_SHA_TAG: ${{ steps.current-git-details.outputs.short }}
       run: |
         echo "## Build Details" >> $GITHUB_STEP_SUMMARY
-        echo "Base image: ${BASE_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
-        echo "Builder image: ${BUILDER_IMAGE:-<dockerfile default>}" >> "$GITHUB_STEP_SUMMARY"
 
         if [[ -n "$RC_TAG" && -n "$REF_TAG" ]]; then
           echo "Tagging platform version $REF_TAG to the RC image $RC_TAG." >> $GITHUB_STEP_SUMMARY
@@ -157,10 +147,39 @@ runs:
           fi
         fi
 
+    - name: Resolve base images
+      id: base-images
+      if: steps.check-image-exists.outputs.image_exists == 'false'
+      shell: bash
+      env:
+        BASE_IMAGE: ${{ inputs.base_image }}
+        BUILDER_IMAGE: ${{ inputs.builder_image }}
+        BUILD_ARGS: ${{ inputs.build_args }}
+      run: |
+        resolved="$("${{ github.action_path }}/resolve-base-images.sh")"
+        echo "$resolved" >> "$GITHUB_OUTPUT"
+        field() {
+          local value
+          value="$(printf '%s\n' "$resolved" | sed -n "s/^$1=//p")"
+          printf '%s' "${value:-${2:-not resolved}}"
+        }
+        {
+          echo "Base image: $(field base_name "$BASE_IMAGE")${BASE_IMAGE:+ (override)}"
+          echo "Base digest: $(field base_digest)"
+          echo "Builder image: $(field builder_name "$BUILDER_IMAGE")${BUILDER_IMAGE:+ (override)}"
+          echo "Builder digest: $(field builder_digest)"
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Build, tag, and push docker image to Amazon ECR
       if: steps.check-image-exists.outputs.image_exists == 'false'
       shell: bash
       env:
+        BASE_REF: ${{ steps.base-images.outputs.base_ref }}
+        BASE_NAME: ${{ steps.base-images.outputs.base_name }}
+        BASE_DIGEST: ${{ steps.base-images.outputs.base_digest }}
+        BUILDER_REF: ${{ steps.base-images.outputs.builder_ref }}
+        BUILDER_NAME: ${{ steps.base-images.outputs.builder_name }}
+        BUILDER_DIGEST: ${{ steps.base-images.outputs.builder_digest }}
         BASE_IMAGE: ${{ inputs.base_image }}
         BUILDER_IMAGE: ${{ inputs.builder_image }}
         BUILD_ARGS: ${{ inputs.build_args }}
@@ -181,13 +200,7 @@ runs:
           TAGS="$TAGS -t $REGISTRY/$REPOSITORY:$REF_TAG"
         fi
 
-        BASE_ARGS=""
-        if [ -n "$BASE_IMAGE" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BASE_IMAGE=$BASE_IMAGE"
-        fi
-        if [ -n "$BUILDER_IMAGE" ]; then
-          BASE_ARGS="$BASE_ARGS --build-arg BUILDER_IMAGE=$BUILDER_IMAGE"
-        fi
+        BASE_ARGS="$("${{ github.action_path }}/resolve-base-images.sh" build-args)"
 
         docker build . $TAGS $BUILD_ARGS $BASE_ARGS --build-arg CURR_GIT_SHA="$SHA" --label org.opencontainers.image.revision="$COMMIT" --label org.opencontainers.image.source="$REPOSITORY_URL"
         docker push --all-tags $REGISTRY/$REPOSITORY
