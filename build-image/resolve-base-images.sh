@@ -71,12 +71,12 @@ frontend_supports_contexts() {
   syntax=${syntax%%@*}
   [ -z "$syntax" ] && return 0
   case $syntax in
-    docker/dockerfile | docker.io/docker/dockerfile) [ "$syntax" = "$directive" ]; return ;;
+    docker/dockerfile | docker.io/docker/dockerfile) [[ "$directive" != *@* ]]; return ;;
     docker/dockerfile:* | docker.io/docker/dockerfile:*) ;;
     *) return 1 ;;
   esac
   syntax=${syntax##*:}
-  case $syntax in latest | labs) return 0 ;; esac
+  case $syntax in latest | labs) [[ "$directive" != *@* ]]; return ;; esac
   syntax=${syntax%%-*}
   major=${syntax%%.*}
   minor=${syntax#"$major"}
