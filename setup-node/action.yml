@@ -68,7 +68,9 @@ runs:
 
     - name: Enable corepack
       if: ${{ steps.detect-yarn-berry.outputs.is_berry == 'true' }}
-      run: corepack enable
+      env:
+        COREPACK_VERSION: "0.36.0"
+      run: '"${{ github.action_path }}/enable-corepack.sh"'
       shell: bash
 
     - name: Resolve dependency paths
