@@ -13,6 +13,10 @@ inputs:
     description: "Enable Corepack"
     default: "false"
     required: false
+  corepack-version:
+    description: "Corepack version to install when Node does not bundle it (Node 25 and later)"
+    default: "0.36.0"
+    required: false
   npm_access_token:
     description: "Access token for downloading private npm packages from @buoysoftware"
     required: false
@@ -68,7 +72,9 @@ runs:
 
     - name: Enable corepack
       if: ${{ steps.detect-yarn-berry.outputs.is_berry == 'true' }}
-      run: corepack enable
+      env:
+        COREPACK_VERSION: ${{ inputs.corepack-version }}
+      run: '"${{ github.action_path }}/enable-corepack.sh"'
       shell: bash
 
     - name: Resolve dependency paths
