@@ -76,7 +76,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
 
     - name: Install Node
-      uses: BuoySoftware/github-actions/setup-node@ed5b54c64cd4f6ae5247a448c2645913145cad25 # v1.4.1
+      uses: BuoySoftware/github-actions/setup-node@42ffbe2cf57d67b18dcdd79a7522d00c7dbdcb2d # v1.8.1
       with:
         node-version: ${{ steps.repo_node_vers.outputs.v }}
         github_packages_token: ${{ inputs.github_packages_token }}
