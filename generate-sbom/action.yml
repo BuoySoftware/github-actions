@@ -57,33 +57,6 @@ runs:
   using: "composite"
 
   steps:
-    # A gem installed from git has no specifications/*.gemspec. Its checkout
-    # gemspec sits under bundler/gems, which the exclude below drops, so the
-    # scan would lose it. Write the evaluated spec first. Skip when the
-    # bundle is not installed. An image scan does not use this checkout.
-    - name: Record git gems
-      if: ${{ inputs.image == '' }}
-      shell: bash
-      working-directory: ${{ inputs.path }}
-      run: |
-        if [ ! -f Gemfile.lock ] || ! command -v bundle >/dev/null 2>&1; then
-          exit 0
-        fi
-        if ! bundle check >/dev/null 2>&1; then
-          exit 0
-        fi
-        bundle exec ruby <<'RUBY'
-        require "bundler/setup"
-        bundle = Bundler.bundle_path.to_s
-        dirs = Bundler.rubygems.spec_cache_dirs.uniq.select { |dir| dir.start_with?("#{bundle}/") }
-        abort "expected one Bundler specifications dir under #{bundle}, found #{dirs.inspect}" unless dirs.one?
-        dir = dirs.first
-        Gem::Specification.each do |spec|
-          next unless spec.full_gem_path.include?("/bundler/gems/")
-          File.write(File.join(dir, "#{spec.full_name}.gemspec"), spec.to_ruby)
-        end
-        RUBY
-
     # upload-release-assets is off because this action owns the upload: the
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
