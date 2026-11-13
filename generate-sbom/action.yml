@@ -11,11 +11,12 @@ description: |
 
   Prerequisites (caller must provide):
   - actions/checkout
-  - installed dependencies, when the SBOM has to carry licenses. Syft reads
-    licenses only from installed package metadata, so a bare checkout scans
-    as NOASSERTION throughout. A Ruby bundle installed under vendor/bundle
-    is handled: the lock files each gem ships for its own development are
-    excluded, the gemspecs the licenses come from are not.
+  - installed dependencies, when the SBOM has to carry licenses. A directory
+    scan does not read Gemfile.lock, so Ruby gems come from installed
+    gemspecs. A checkout that has not installed the bundle does not list
+    those gems. A Ruby bundle installed under vendor/bundle is handled: the
+    lock files each gem ships for its own development are excluded, the
+    gemspecs the licenses come from are not.
   - python3 on PATH for the release step, which talks to the REST API
     directly. The gh CLI is deliberately not used: GitHub-hosted runners
     preinstall it and self-hosted images do not necessarily carry it.
@@ -38,10 +39,6 @@ inputs:
   path:
     description: "Directory scanned for dependencies"
     default: "."
-    required: false
-  remove_gemfile_lock:
-    description: "On a directory scan, delete Gemfile.lock after git gems are recorded and before the scan. The lockfile cataloger reads that file by name."
-    default: "false"
     required: false
   release_tag:
     description: "Tag whose release receives the upload. Defaults to the pushed tag"
@@ -87,12 +84,6 @@ runs:
         end
         RUBY
 
-    - name: Drop Gemfile.lock
-      if: ${{ inputs.image == '' && inputs.remove_gemfile_lock == 'true' }}
-      shell: bash
-      working-directory: ${{ inputs.path }}
-      run: rm -f Gemfile.lock
-
     # upload-release-assets is off because this action owns the upload: the
     # built-in one fires only on a tag push, which is the gap being closed.
     - name: Generate SBOM
@@ -100,8 +91,10 @@ runs:
       # Both env vars below apply to a directory scan only. Syft ignores
       # relative excludes on an image and the deselected catalogers are
       # directory-tagged, so an image scan silently runs without them.
+      # ruby-gemfile-cataloger reads Gemfile.lock by name, including gems
+      # that were not installed. The installed gemspecs remain.
       env:
-        SYFT_SELECT_CATALOGERS: "-github-actions"
+        SYFT_SELECT_CATALOGERS: "-github-actions,-ruby-gemfile-cataloger"
         # Never exclude specifications/*.gemspec: gem licenses come only from
         # there. Splits on commas only, so one line with no spaces.
         SYFT_EXCLUDE: "./vendor/bundle/**/Gemfile.lock,./vendor/bundle/**/yarn.lock,./vendor/bundle/**/package-lock.json,./vendor/bundle/**/package.json,./vendor/bundle/**/gems/**/*.gemspec"
