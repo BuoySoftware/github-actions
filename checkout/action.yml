@@ -33,8 +33,10 @@ runs:
   steps:
     - name: Determine ref to checkout
       id: ref_check
+      env:
+        INPUT_REF: ${{ inputs.ref }}
       run: |
-        ref="${{ inputs.ref }}"
+        ref="$INPUT_REF"
 
         if [[ -z "$ref" ]]; then
           echo "ℹ️ No ref provided, defaulting to 'main'"
@@ -63,17 +65,21 @@ runs:
 
     - name: If needed, checkout the short SHA manually
       if: ${{ steps.ref_check.outputs.ref_to_checkout != inputs.ref && inputs.ref != '' }}
+      env:
+        INPUT_REF: ${{ inputs.ref }}
       run: |
-        echo "ℹ️ Checking out ref: ${{ inputs.ref }}"
+        echo "ℹ️ Checking out ref: $INPUT_REF"
         git fetch origin
-        git checkout "${{ inputs.ref }}"
+        git checkout "$INPUT_REF"
       shell: bash
       working-directory: ${{ inputs.working_directory }}
 
     - name: Validate the checked out ref
       if: ${{ inputs.ref != '' }}
+      env:
+        INPUT_REF: ${{ inputs.ref }}
       run: |
-        input_ref="${{ inputs.ref }}"
+        input_ref="$INPUT_REF"
 
         echo "ℹ️ Resolving input ref: $input_ref"
         resolved_ref=$(git rev-parse "${input_ref}^{}" 2>/dev/null || true)
